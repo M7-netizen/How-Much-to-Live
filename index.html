@@ -1,4 +1,4 @@
-<!-- build:20260519020540 -->
+<!-- build:20260519021556 -->
 <!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -1404,8 +1404,6 @@ window.calcMyr = function() {
 };
 
 // Store pending MYR fee info to auto-create fee txn on submit
-let pendingMyrFee = null;
-
 window.applyMyr = function() {
   if (!myrRate || !selPayMethod) return;
   const rm = parseFloat(document.getElementById('myr-amt').value);
@@ -1559,6 +1557,7 @@ window.delIncomeTxn = async function(id){
 
 // ── EDIT TXN ──
 let editTxnId = null, editSelCat = null, editSelSub = null;
+let pendingMyrFee = null; // stores MYR fee info for auto fee txn creation
 
 window.openEditTxn = function(id) {
   const t = txns.find(x => x.id === id);
