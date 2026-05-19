@@ -2282,9 +2282,16 @@ function toast(msg){
       if(currentPage==='income')buildIncomeEntry();
       if(currentPage==='history')renderHist();
       if(currentPage==='settings')setTimeout(()=>renderSettings(),50);
+      // Release lock FIRST before any render calls that might throw
       dragging=false;lockDir=null;lockedDir=null;dragOffset=0;velocity=0;
       swipeBusy=false;
       log(`READY: page=${currentPage} isAnim=${isAnimating} busy=${swipeBusy}`);
+      try{
+        if(currentPage==='entry')buildEntry();
+        if(currentPage==='income')buildIncomeEntry();
+        if(currentPage==='history')renderHist();
+        if(currentPage==='settings')setTimeout(()=>renderSettings(),50);
+      }catch(err){log('render err: '+err.message);}
     },dur);
   }
 
