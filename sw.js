@@ -1,5 +1,5 @@
-const CACHE = 'yuezh-v27';
-const ASSETS = ['/', '/index.html', '/manifest.json'];
+const CACHE = 'yuezh-v30';
+const ASSETS = ['/', '/index.html', '/manifest.json', '/icon.svg'];
 
 // Install: cache core files
 self.addEventListener('install', e => {
