@@ -2200,32 +2200,31 @@ function toast(msg){
 // ── SWIPE GESTURES ──
 (function(){
   var sx=0, sy=0, ox=0, vx=0, lx=0, lt=0;
-  var axis=null;          // 'h' or 'v', locked on first move
-  var lockedSide=null;    // the neighbour we committed to ('MONTH_PREV','MONTH_NEXT', or page id)
-  var isMonth=false;      // true if lockedSide is a month sentinel
+  var axis=null;
+  var lockedSide=null;
+  var isMonth=false;
   var busy=false;
   var active=false;
 
   var THRESH=0.25, VTHRESH=0.4;
   function W(){ return window.innerWidth; }
 
-  // Compute left/right neighbours for current state
+  function isSentinel(s){ return s==='MONTH_PREV'||s==='MONTH_NEXT'; }
+
   function neighbours(){
     var today=new Date(), ty=today.getFullYear(), tm=today.getMonth()+1;
-    var atNow = (curY===ty && curM===tm);
+    var atNow=(curY===ty && curM===tm);
     var L, R;
     if(currentPage==='dashboard'){
-      R = 'MONTH_PREV';
-      L = atNow ? 'entry' : 'MONTH_NEXT';
+      R='MONTH_PREV';
+      L=atNow?'entry':'MONTH_NEXT';
     } else {
-      var i = PAGE_ORDER.indexOf(currentPage);
-      L = i < PAGE_ORDER.length-1 ? PAGE_ORDER[i+1] : null;
-      R = i > 0                   ? PAGE_ORDER[i-1] : null;
+      var i=PAGE_ORDER.indexOf(currentPage);
+      L=i<PAGE_ORDER.length-1?PAGE_ORDER[i+1]:null;
+      R=i>0?PAGE_ORDER[i-1]:null;
     }
-    return {L:L, R:R};
+    return {L:L,R:R};
   }
-
-  function isSentinel(s){ return s==='MONTH_PREV'||s==='MONTH_NEXT'; }
 
   function lockCurrent(){
     var el=document.getElementById('page-'+currentPage);
@@ -2233,42 +2232,52 @@ function toast(msg){
     el.style.cssText='position:absolute;top:0;left:0;width:100%;';
   }
 
+  function unlockCurrent(){
+    var el=document.getElementById('page-'+currentPage);
+    document.getElementById('pages-container').style.height='';
+    el.removeAttribute('style');
+    el.classList.add('active');
+  }
+
   function prepNeighbour(pageId, putOnRight){
-    // putOnRight=true  → place page at +W() (to the right, revealed by left swipe)
-    // putOnRight=false → place page at -W() (to the left,  revealed by right swipe)
     var el=document.getElementById('page-'+pageId);
     el.style.cssText='display:block;position:absolute;top:0;left:0;width:100%;'
-      +'transform:translateX('+(putOnRight ? W() : -W())+'px)';
+      +'transform:translateX('+(putOnRight?W():-W())+'px)';
+  }
+
+  function hideNeighbour(pageId){
+    var el=document.getElementById('page-'+pageId);
+    el.removeAttribute('style');
+    el.style.display='none';
   }
 
   function applyOffset(offset){
     document.getElementById('page-'+currentPage).style.transform='translateX('+offset+'px)';
     if(!isMonth && lockedSide){
-      var nEl=document.getElementById('page-'+lockedSide);
-      // neighbour started at ±W(), moves by same offset
-      var start = lockedSide===neighbours().L ? W() : -W();
-      nEl.style.transform='translateX('+(start+offset)+'px)';
+      var nb=neighbours();
+      var start=lockedSide===nb.L?W():-W();
+      document.getElementById('page-'+lockedSide).style.transform='translateX('+(start+offset)+'px)';
     }
   }
 
   function goPage(target, movingLeft, dur){
     var ease='cubic-bezier(0.4,0,0.2,1)';
     var curEl=document.getElementById('page-'+currentPage);
-    var nEl  =document.getElementById('page-'+target);
+    var nEl=document.getElementById('page-'+target);
     curEl.style.transition='transform '+dur+'ms '+ease;
-    curEl.style.transform ='translateX('+(movingLeft?-W():W())+'px)';
-    nEl.style.transition  ='transform '+dur+'ms '+ease;
-    nEl.style.transform   ='translateX(0)';
+    curEl.style.transform='translateX('+(movingLeft?-W():W())+'px)';
+    nEl.style.transition='transform '+dur+'ms '+ease;
+    nEl.style.transform='translateX(0)';
     setTimeout(function(){
       curEl.removeAttribute('style'); curEl.classList.remove('active'); curEl.style.display='none';
-      nEl.removeAttribute('style');   nEl.classList.add('active');
+      nEl.removeAttribute('style'); nEl.classList.add('active');
       currentPage=target;
       document.querySelectorAll('.nav-btn').forEach(function(b,i){
         b.classList.toggle('active',PAGE_ORDER[i]===currentPage);
       });
       document.getElementById('month-bar-el').classList.toggle('hidden',currentPage==='settings');
-      if(currentPage==='entry')   buildEntry();
-      if(currentPage==='income')  buildIncomeEntry();
+      if(currentPage==='entry') buildEntry();
+      if(currentPage==='income') buildIncomeEntry();
       if(currentPage==='history') renderHist();
       if(currentPage==='settings') setTimeout(function(){renderSettings();},50);
       reset(); busy=false;
@@ -2281,23 +2290,34 @@ function toast(msg){
     curEl.style.transition='transform '+dur+'ms '+ease;
     curEl.style.transform='translateX(0)';
     if(!isMonth && lockedSide){
+      var nb=neighbours();
+      var start=lockedSide===nb.L?W():-W();
       var nEl=document.getElementById('page-'+lockedSide);
-      var start=lockedSide===neighbours().L ? W() : -W();
       nEl.style.transition='transform '+dur+'ms '+ease;
       nEl.style.transform='translateX('+start+'px)';
-      setTimeout(function(){ nEl.removeAttribute('style'); nEl.style.display='none'; },dur);
+      setTimeout(function(){ hideNeighbour(lockedSide); },dur);
     }
     setTimeout(function(){
-      document.getElementById('pages-container').style.height='';
-      curEl.removeAttribute('style'); curEl.classList.add('active');
-      reset(); busy=false;
+      unlockCurrent();
+      reset();
+      busy=false;
       if(cb) cb();
     },dur);
   }
 
-  function reset(){ active=false; axis=null; ox=0; vx=0; lockedSide=null; isMonth=false; }
+  // For month swipe: no animation, just instantly reset and change month
+  function doMonthChange(delta){
+    // Immediately restore page to normal (no transition needed, changeMonth re-renders)
+    unlockCurrent();
+    reset();
+    busy=false;
+    changeMonth(delta);
+  }
 
-  // ── TOUCH START ──
+  function reset(){
+    active=false; axis=null; ox=0; vx=0; lockedSide=null; isMonth=false;
+  }
+
   document.addEventListener('touchstart',function(e){
     if(busy) return;
     if(e.target.closest('input,select,textarea,button,.myr-box,.settings-cat-body,.modal-overlay,#cat-detail-overlay,#edit-overlay,.amount-row')) return;
@@ -2305,7 +2325,6 @@ function toast(msg){
     lt=Date.now(); ox=0; vx=0; axis=null; active=true;
   },{passive:true});
 
-  // ── TOUCH MOVE ──
   document.addEventListener('touchmove',function(e){
     if(!active||busy) return;
     var x=e.touches[0].clientX, y=e.touches[0].clientY;
@@ -2317,42 +2336,56 @@ function toast(msg){
       if(Math.abs(dx)<6&&Math.abs(dy)<6) return;
       axis=Math.abs(dx)>Math.abs(dy)?'h':'v';
       if(axis==='h'){
-        // Lock direction NOW based on initial dx — never changes after this
+        // dx>0: finger moved RIGHT → want to reveal right neighbour (sideR)
+        // dx<0: finger moved LEFT  → want to reveal left neighbour (sideL)
         var nb=neighbours();
-        lockedSide = dx>0 ? nb.R : nb.L;  // finger right → reveal R; finger left → reveal L
+        lockedSide=dx>0?nb.R:nb.L;
         if(!lockedSide){ active=false; return; }
         isMonth=isSentinel(lockedSide);
         lockCurrent();
-        if(!isMonth) prepNeighbour(lockedSide, dx<0); // dx<0 = finger left = neighbour goes on right
+        if(!isMonth){
+          // neighbour sits to the RIGHT of screen if finger goes left (dx<0), LEFT if finger goes right
+          prepNeighbour(lockedSide, dx<0);
+        }
       }
     }
 
     if(axis==='h'){
       if(e.target.closest('input,select,textarea,.amount-row,.myr-box')){ active=false; return; }
       e.preventDefault();
-      ox=dx; // raw offset — positive = finger went right
+      ox=dx;
       applyOffset(ox);
     }
   },{passive:false});
 
-  // ── TOUCH END ──
   document.addEventListener('touchend',function(e){
     if(!active) return;
     if(axis==='h'){
       var abs=Math.abs(ox);
       var commit=abs>W()*THRESH||(Math.abs(vx)>VTHRESH&&abs>15);
-      var dur=Math.max(180,Math.round(340*(1-abs/W()*0.5)));
+      var dur=Math.max(200,Math.round(320*(1-abs/W()*0.4)));
       busy=true;
 
       if(commit && lockedSide==='MONTH_PREV'){
-        snapBack(dur,function(){ changeMonth(-1); });
+        // finger went right (ox>0), go to previous month
+        // small slide-left animation on current page before changing month
+        var curEl=document.getElementById('page-'+currentPage);
+        curEl.style.transition='transform '+dur+'ms cubic-bezier(0.4,0,0.2,1)';
+        curEl.style.transform='translateX('+W()+'px)';
+        setTimeout(function(){
+          doMonthChange(-1);
+        }, dur);
       } else if(commit && lockedSide==='MONTH_NEXT'){
-        snapBack(dur,function(){ changeMonth(1); });
+        var curEl=document.getElementById('page-'+currentPage);
+        curEl.style.transition='transform '+dur+'ms cubic-bezier(0.4,0,0.2,1)';
+        curEl.style.transform='translateX(-'+W()+'px)';
+        setTimeout(function(){
+          doMonthChange(1);
+        }, dur);
       } else if(commit && lockedSide){
-        // ox>0 = finger went right = current page moves right = movingLeft=false
         goPage(lockedSide, ox<0, dur);
       } else {
-        snapBack(Math.min(Math.max(180,Math.round(280*(abs/W()))),300));
+        snapBack(Math.min(Math.max(180,Math.round(260*(abs/W()))),280));
       }
     } else {
       reset();
