@@ -1,4 +1,4 @@
-<!-- build:20260519023339 -->
+<!-- build:20260519024748 -->
 <!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -1186,6 +1186,10 @@ window.addSub=async function(catId){
   cat.sub.push(val);inp.value='';
   renderSubTags(catId);toast(`已添加「${val}」`);
   renderSettings(catId);
+  setTimeout(()=>{
+    const newInp=document.getElementById('sinput-'+catId);
+    if(newInp) newInp.focus();
+  }, 50);
   await fsSetCat(cat);
 };
 
