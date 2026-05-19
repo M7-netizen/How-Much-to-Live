@@ -2200,25 +2200,23 @@ function toast(msg){
 // ── SWIPE GESTURES (drag-follow) ──
 (function(){
   let startX=0,startY=0,lastX=0,lastTime=0,velocity=0;
-  let dragging=false,lockDir=null,dragOffset=0;
-  let lockedDir=null; // 'left' or 'right', locked at axis-lock time
+  let dragging=false,lockDir=null,dragOffset=0,lockedDir=null;
+  let swipeBusy=false; // separate from isAnimating, only for swipe
   const THRESHOLD=0.25,VEL_THRESHOLD=0.25;
 
   function W(){return window.innerWidth;}
 
-  // On dashboard: right swipe = prev month, left swipe = next month (or entry if current month)
-  function getDashboardAction(dir){
+  function getDashboardMonthAction(dir){
     const t=new Date(), atNow=(curY===t.getFullYear()&&curM===t.getMonth()+1);
     if(dir==='right') return 'MONTH_PREV';
-    if(dir==='left')  return atNow ? null : 'MONTH_NEXT'; // null = fall through to page nav
+    if(dir==='left')  return atNow ? null : 'MONTH_NEXT';
     return null;
   }
 
   function getSibling(dir){
-    // On dashboard, check month action first
     if(currentPage==='dashboard'){
-      const action=getDashboardAction(dir);
-      if(action) return action; // 'MONTH_PREV' or 'MONTH_NEXT'
+      const a=getDashboardMonthAction(dir);
+      if(a) return a;
     }
     const idx=PAGE_ORDER.indexOf(currentPage);
     if(dir==='left' &&idx<PAGE_ORDER.length-1)return PAGE_ORDER[idx+1];
@@ -2226,14 +2224,14 @@ function toast(msg){
     return null;
   }
 
-  function isMonthAction(s){ return s==='MONTH_PREV'||s==='MONTH_NEXT'; }
+  function isMonth(s){return s==='MONTH_PREV'||s==='MONTH_NEXT';}
 
   function setupAdjacentPage(dir){
     const next=getSibling(dir);
-    if(!next) return false;
-    if(isMonthAction(next)) return true; // month swipe: no DOM setup needed
+    if(!next)return false;
+    if(isMonth(next))return true; // no DOM changes for month
     const nextEl=document.getElementById('page-'+next);
-    const curEl =document.getElementById('page-'+currentPage);
+    const curEl=document.getElementById('page-'+currentPage);
     const h=curEl.offsetHeight;
     document.getElementById('pages-container').style.height=h+'px';
     nextEl.style.cssText=`display:block;position:absolute;top:0;left:0;width:100%;transform:translateX(${dir==='left'?W():-W()}px)`;
@@ -2244,15 +2242,14 @@ function toast(msg){
   function applyDrag(offset){
     const curEl=document.getElementById('page-'+currentPage);
     const next=getSibling(lockedDir);
-    if(isMonthAction(next)){
-      // rubber-band only
+    if(isMonth(next)){
       curEl.style.transform=`translateX(${offset*0.2}px)`;
       return;
     }
     curEl.style.transform=`translateX(${offset}px)`;
     if(next){
-      const nextEl=document.getElementById('page-'+next);
-      nextEl.style.transform=`translateX(${(lockedDir==='left'?W():-W())+offset}px)`;
+      document.getElementById('page-'+next).style.transform=
+        `translateX(${(lockedDir==='left'?W():-W())+offset}px)`;
     }
   }
 
@@ -2269,6 +2266,7 @@ function toast(msg){
       nextEl.removeAttribute('style');nextEl.classList.add('active');
       document.getElementById('pages-container').style.height='';
       currentPage=next;
+      // Update nav highlight
       document.querySelectorAll('.nav-btn').forEach((b,i)=>{
         b.classList.toggle('active',PAGE_ORDER[i]===currentPage);
       });
@@ -2277,7 +2275,8 @@ function toast(msg){
       if(currentPage==='income')buildIncomeEntry();
       if(currentPage==='history')renderHist();
       if(currentPage==='settings')setTimeout(()=>renderSettings(),50);
-      reset();isAnimating=false;
+      dragging=false;lockDir=null;lockedDir=null;dragOffset=0;velocity=0;
+      swipeBusy=false;
     },dur);
   }
 
@@ -2287,7 +2286,7 @@ function toast(msg){
     curEl.style.transition=`transform ${dur}ms ${ease}`;
     curEl.style.transform='translateX(0)';
     const next=getSibling(lockedDir);
-    if(next&&!isMonthAction(next)){
+    if(next&&!isMonth(next)){
       const nextEl=document.getElementById('page-'+next);
       nextEl.style.transition=`transform ${dur}ms ${ease}`;
       nextEl.style.transform=`translateX(${lockedDir==='left'?W():-W()}px)`;
@@ -2296,14 +2295,13 @@ function toast(msg){
     setTimeout(()=>{
       document.getElementById('pages-container').style.height='';
       curEl.removeAttribute('style');curEl.classList.add('active');
-      reset();isAnimating=false;
+      dragging=false;lockDir=null;lockedDir=null;dragOffset=0;velocity=0;
+      swipeBusy=false;
     },dur);
   }
 
-  function reset(){dragging=false;lockDir=null;lockedDir=null;dragOffset=0;velocity=0;}
-
   document.addEventListener('touchstart',e=>{
-    if(isAnimating)return;
+    if(swipeBusy||isAnimating)return;
     if(e.target.closest('input,select,textarea,button,.myr-box,.settings-cat-body,.modal-overlay,#cat-detail-overlay,#edit-overlay,.amount-row'))return;
     startX=lastX=e.touches[0].clientX;
     startY=e.touches[0].clientY;
@@ -2312,7 +2310,7 @@ function toast(msg){
   },{passive:true});
 
   document.addEventListener('touchmove',e=>{
-    if(!dragging||isAnimating)return;
+    if(!dragging||swipeBusy||isAnimating)return;
     const x=e.touches[0].clientX,y=e.touches[0].clientY;
     const now=Date.now(),dt=Math.max(now-lastTime,1);
     velocity=(x-lastX)/dt;lastX=x;lastTime=now;
@@ -2322,7 +2320,6 @@ function toast(msg){
       if(Math.abs(dx)>5||Math.abs(dy)>5){
         lockDir=Math.abs(dx)>Math.abs(dy)?'h':'v';
         if(lockDir==='h'){
-          // Lock direction ONCE here, never recalculate
           lockedDir=dx<0?'left':'right';
           if(!setupAdjacentPage(lockedDir)){dragging=false;return;}
         }
@@ -2343,18 +2340,17 @@ function toast(msg){
       const abs=Math.abs(dragOffset),absV=Math.abs(velocity);
       const commit=abs>W()*THRESHOLD||(absV>VEL_THRESHOLD&&abs>15);
       const next=getSibling(lockedDir);
-      isAnimating=true;
+      swipeBusy=true;
 
-      if(commit&&isMonthAction(next)){
-        // Snap rubber-band back, then change month
+      if(commit&&isMonth(next)){
         const delta=next==='MONTH_PREV'?-1:1;
         const curEl=document.getElementById('page-'+currentPage);
         curEl.style.transition='transform 200ms cubic-bezier(0.25,0.46,0.45,0.94)';
         curEl.style.transform='translateX(0)';
         setTimeout(()=>{
           curEl.removeAttribute('style');
-          // dashboard page still has .active — don't touch classList
-          reset();isAnimating=false;
+          dragging=false;lockDir=null;lockedDir=null;dragOffset=0;velocity=0;
+          swipeBusy=false;
           changeMonth(delta);
         },200);
       } else if(commit&&next){
@@ -2366,7 +2362,7 @@ function toast(msg){
         snapBack(Math.min(snapDur,350));
       }
     } else {
-      reset();
+      dragging=false;
     }
   },{passive:true});
 })();// ── START ──
