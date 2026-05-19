@@ -2264,7 +2264,8 @@ function toast(msg){
     curEl.style.transform=`translateX(${dir==='left'?-W():W()}px)`;
     nextEl.style.transition=`transform ${dur}ms ${ease}`;
     nextEl.style.transform='translateX(0)';
-    setTimeout(()=>{
+
+    function cleanup(){
       curEl.removeAttribute('style');curEl.classList.remove('active');curEl.style.display='none';
       nextEl.removeAttribute('style');nextEl.classList.add('active');
       document.getElementById('pages-container').style.height='';
@@ -2279,7 +2280,13 @@ function toast(msg){
       if(currentPage==='income')buildIncomeEntry();
       if(currentPage==='history')renderHist();
       if(currentPage==='settings')setTimeout(()=>renderSettings(),50);
-    },dur);
+    }
+
+    // Use transitionend for precision, fallback setTimeout in case it doesn't fire
+    let done=false;
+    function onDone(){if(done)return;done=true;nextEl.removeEventListener('transitionend',onDone);cleanup();}
+    nextEl.addEventListener('transitionend',onDone,{once:true});
+    setTimeout(onDone, dur+60); // fallback
   }
 
   function snapBack(dur){
