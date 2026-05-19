@@ -1,4 +1,4 @@
-<!-- build:20260519064507986516 -->
+<!-- build:20260519064952029619 -->
 <!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -1376,6 +1376,79 @@ window.makeDraggable=function(e,catId){
   document.addEventListener('mouseup',onUp);
 };
 
+
+// ── INCOME CAT MANAGEMENT ──
+function renderIncomeSubTags(catId){
+  const cat = incomeCats.find(c=>c.id===catId);
+  const el = document.getElementById('istags-'+catId);
+  if(!el) return;
+  if(!cat||!cat.sub||cat.sub.length===0){
+    el.innerHTML='<span class="no-sub">暂无细分</span>';return;
+  }
+  el.innerHTML = cat.sub.map((s,i)=>`
+    <div class="sub-tag">${s}
+      <button class="sub-tag-del" onclick="delIncomeSub('${catId}',${i})">×</button>
+    </div>`).join('');
+}
+
+window.addIncomeSub = async function(catId){
+  const inp = document.getElementById('isinput-'+catId);
+  const val = inp.value.trim(); if(!val) return;
+  const cat = incomeCats.find(c=>c.id===catId); if(!cat) return;
+  if(!cat.sub) cat.sub=[];
+  if(cat.sub.includes(val)){toast('细分已存在');return;}
+  cat.sub.push(val); inp.value='';
+  renderIncomeSubTags(catId); toast(`已添加「${val}」`);
+  renderSettings(catId);
+  setTimeout(()=>{const ni=document.getElementById('isinput-'+catId);if(ni)ni.focus();},50);
+  try{ await setDoc(doc(db,'incomeCats',catId), cat); }catch(e){}
+};
+
+window.delIncomeSub = async function(catId, idx){
+  const cat = incomeCats.find(c=>c.id===catId); if(!cat) return;
+  cat.sub.splice(idx,1);
+  renderIncomeSubTags(catId); toast('已删除细分');
+  renderSettings(catId);
+  try{ await setDoc(doc(db,'incomeCats',catId), cat); }catch(e){}
+};
+
+window.delIncomeCat = async function(catId){
+  const cat = incomeCats.find(c=>c.id===catId); if(!cat) return;
+  if(!confirm(`确认删除「${cat.label}」？`)) return;
+  incomeCats = incomeCats.filter(c=>c.id!==catId);
+  renderSettings(); toast(`已删除「${cat.label}」`);
+  try{ await deleteDoc(doc(db,'incomeCats',catId)); }catch(e){}
+};
+
+let incomeCatModalMode = 'add', incomeCatModalEditId = null;
+
+window.openAddIncomeCatModal = function(){
+  incomeCatModalMode = 'add'; incomeCatModalEditId = null;
+  document.getElementById('modal-title').textContent = '新增收入类别';
+  document.getElementById('modal-emoji').value = '';
+  document.getElementById('modal-name').value = '';
+  // Hide MYR toggle for income cats
+  const myrField = document.getElementById('modal-myr').closest('.modal-field');
+  if(myrField) myrField.style.display = 'none';
+  const usedColors = new Set([...cats,...incomeCats].map(c=>c.color));
+  const autoColor = PALETTE.find(c=>!usedColors.has(c))||PALETTE[0];
+  buildColorGrid(autoColor);
+  document.getElementById('modal-overlay').classList.add('open');
+  setTimeout(()=>document.getElementById('modal-emoji').focus(),120);
+};
+
+window.openEditIncomeCat = function(catId){
+  const cat = incomeCats.find(c=>c.id===catId); if(!cat) return;
+  incomeCatModalMode = 'edit'; incomeCatModalEditId = catId;
+  document.getElementById('modal-title').textContent = '编辑收入类别';
+  document.getElementById('modal-emoji').value = cat.emoji;
+  document.getElementById('modal-name').value = cat.label;
+  const myrField = document.getElementById('modal-myr').closest('.modal-field');
+  if(myrField) myrField.style.display = 'none';
+  buildColorGrid(PALETTE.includes(cat.color)?cat.color:PALETTE[0]);
+  document.getElementById('modal-overlay').classList.add('open');
+};
+
 // ── MODAL ──
 function buildColorGrid(sel){
   const g=document.getElementById('color-grid');g.innerHTML='';
@@ -1423,7 +1496,8 @@ window.openEdit=function(catId){
 window.closeModalOutside=function(e){if(e.target===document.getElementById('modal-overlay'))closeModal();};
 window.closeModal=function(){
   document.getElementById('modal-overlay').classList.remove('open');
-  document.getElementById('modal-myr').parentElement.parentElement.parentElement.style.display='';
+  const myrField = document.getElementById('modal-myr').closest('.modal-field');
+  if(myrField) myrField.style.display='';
 };
 window.confirmModal=async function(){
   const emoji=document.getElementById('modal-emoji').value.trim()||'📦';
