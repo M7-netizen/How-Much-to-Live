@@ -1,4 +1,4 @@
-<!-- build:20260519021556 -->
+<!-- build:20260519023339 -->
 <!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -1066,7 +1066,10 @@ window.addTxn=async function(){
       note:`${feeLabel} (${pendingMyrFee.methodLabel}) RM${pendingMyrFee.rm} @ ${pendingMyrFee.rate.toFixed(4)}`,
       date:now_ts,
       isFee:true,
+      linkedTo:txn.id,
     };
+    // Also link main txn to fee txn
+    txn.feeId = feeTxn.id;
     txns.unshift(feeTxn);
     pendingMyrFee=null;
   }
@@ -1121,10 +1124,15 @@ function renderHist(){
 }
 
 window.delTxnFn=async function(id){
-  txns=txns.filter(t=>t.id!==id);
+  // Find if this txn has a linked fee txn
+  const txn = txns.find(t=>t.id===id);
+  const feeId = txn?.feeId;
+  // Also find if this is itself a fee txn linked to something
+  txns=txns.filter(t=>t.id!==id && t.id!==feeId);
   renderHist();renderDash();
-  toast('已删除');
+  toast(feeId ? '已删除（含手续费）' : '已删除');
   await fsDelTxn(id);
+  if(feeId) await fsDelTxn(feeId);
 };
 
 // ── SETTINGS ──

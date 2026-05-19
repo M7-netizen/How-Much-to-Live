@@ -1,4 +1,4 @@
-const CACHE = 'yuezh-v20';
+const CACHE = 'yuezh-v21';
 const ASSETS = ['/', '/index.html', '/manifest.json'];
 
 // Install: cache core files
