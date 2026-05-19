@@ -1,4 +1,4 @@
-<!-- build:20260519034711 -->
+<!-- build:20260519035910 -->
 <!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -175,6 +175,15 @@
 
   /* HISTORY */
   .history-wrap{margin-top:12px;}
+  .sub-nav{display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:10px 14px;
+    background:var(--surface);border:1px solid var(--border);border-radius:12px;}
+  .sub-nav-btn{background:transparent;border:1px solid var(--border);color:var(--text-dim);
+    border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer;font-family:var(--font-sans);
+    transition:all .15s;white-space:nowrap;flex-shrink:0;}
+  .sub-nav-btn:hover{border-color:var(--gold);color:var(--gold);}
+  .sub-nav-btn:disabled{opacity:.25;cursor:default;}
+  .sub-nav-current{flex:1;text-align:center;font-size:13px;color:var(--text);font-family:var(--font-sans);}
+  .sub-nav-divider{color:var(--border2);font-size:12px;}
   .filter-bar{display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap;}
   .filter-chip{display:flex;align-items:center;gap:5px;background:var(--gold-dim);border:1px solid var(--gold-border);
     color:var(--gold);border-radius:20px;padding:6px 12px;font-size:13px;font-family:var(--font-sans);}
@@ -470,7 +479,18 @@
   <!-- HISTORY -->
   <div class="page" id="page-history">
     <div id="filter-bar-wrap" style="margin-top:12px;display:none;">
-      <div class="filter-bar">
+      <div id="sub-nav-wrap" style="display:none;">
+        <div class="sub-nav">
+          <button class="sub-nav-btn" id="sub-nav-prev" onclick="navSub(-1)">‹ 上一个</button>
+          <span class="sub-nav-current" id="sub-nav-current"></span>
+          <button class="sub-nav-btn" id="sub-nav-next" onclick="navSub(1)">下一个 ›</button>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:10px;">
+          <button class="sub-nav-btn" onclick="backToCatDetail()" style="flex:1;text-align:center;">↩ 细分排行</button>
+          <button class="sub-nav-btn" onclick="clearSubFilter()" style="flex:1;text-align:center;">查看全部明细</button>
+        </div>
+      </div>
+      <div class="filter-bar" id="simple-filter-bar">
         <span class="filter-label">筛选</span>
         <div class="filter-chip" id="filter-chip">
           <span id="filter-chip-label"></span>
@@ -1154,8 +1174,9 @@ function renderHist(){
     filterWrap.style.display = 'none';
   }
 
+  updateSubNav();
   const list=document.getElementById('history-list');
-  if(!mt.length){list.innerHTML='<div class="empty-state">'+(historyFilter?'该类别本月暂无记录':'本月暂无记录')+'</div>';return;}
+  if(!mt.length){list.innerHTML='<div class="empty-state">'+(historySubFilter?'该细分本月暂无记录':historyFilter?'该类别本月暂无记录':'本月暂无记录')+'</div>';return;}
   list.innerHTML='';
   mt.forEach((t,i)=>{
     const cat=gc(t.catId);const d=new Date(t.date);
@@ -1513,6 +1534,8 @@ window.applyMyr = function() {
 // ── CAT DETAIL MODAL ──
 let catDetailId = null;
 
+let catDetailSortedSubs = []; // for sub navigation
+
 window.openCatDetail = function(catId) {
   const cat = gc(catId);
   if(!cat) return;
@@ -1530,6 +1553,7 @@ window.openCatDetail = function(catId) {
   });
 
   const sorted = Object.entries(subMap).sort((a,b) => b[1]-a[1]);
+  catDetailSortedSubs = sorted.map(([sub]) => sub);
 
   document.getElementById('cd-emoji').textContent = cat.emoji;
   document.getElementById('cd-name').textContent = cat.label;
@@ -1610,6 +1634,44 @@ window.catDetailGoHistory = function() {
   goToHistory(catDetailId);
 };
 
+window.navSub = function(dir) {
+  if(!historySubFilter || !catDetailId) return;
+  const idx = catDetailSortedSubs.indexOf(historySubFilter);
+  const newIdx = idx + dir;
+  if(newIdx < 0 || newIdx >= catDetailSortedSubs.length) return;
+  historySubFilter = catDetailSortedSubs[newIdx];
+  renderHist();
+  updateSubNav();
+};
+
+window.backToCatDetail = function() {
+  openCatDetail(catDetailId);
+};
+
+window.clearSubFilter = function() {
+  historySubFilter = null;
+  renderHist();
+  updateSubNav();
+};
+
+function updateSubNav() {
+  const subNavWrap = document.getElementById('sub-nav-wrap');
+  const simpleBar = document.getElementById('simple-filter-bar');
+  if(historyFilter && historySubFilter) {
+    subNavWrap.style.display = 'block';
+    simpleBar.style.display = 'none';
+    const idx = catDetailSortedSubs.indexOf(historySubFilter);
+    const cat = gc(historyFilter);
+    document.getElementById('sub-nav-current').textContent =
+      `${cat?.emoji||''} ${cat?.label||''} · ${historySubFilter} (${idx+1}/${catDetailSortedSubs.length})`;
+    document.getElementById('sub-nav-prev').disabled = idx <= 0;
+    document.getElementById('sub-nav-next').disabled = idx >= catDetailSortedSubs.length-1;
+  } else {
+    subNavWrap.style.display = 'none';
+    simpleBar.style.display = historyFilter ? 'flex' : 'none';
+  }
+}
+
 window.catDetailGoSub = function(sub) {
   document.getElementById('cat-detail-overlay').classList.remove('open');
   historySubFilter = sub;
@@ -1625,6 +1687,7 @@ window.goToHistory = function(catId) {
 window.clearFilter = function() {
   historyFilter = null;
   historySubFilter = null;
+  catDetailSortedSubs = [];
   renderHist();
   document.getElementById('filter-bar-wrap').style.display = 'none';
 };
