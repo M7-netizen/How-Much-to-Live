@@ -1,4 +1,4 @@
-<!-- build:20260519064952029619 -->
+<!-- build:20260519065358193067 -->
 <!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -74,7 +74,56 @@
   #month-bar-el.hidden{opacity:0;pointer-events:none;}
 
   /* PAGES */
-  .page{display:none;}.page.active{display:block;}
+  .pages-container{position:relative;overflow:hidden;}
+  .page{
+    display:none;
+    position:absolute;top:0;left:0;width:100%;
+    will-change:transform;
+  }
+  .page.active{
+    display:block;
+    position:relative;
+  }
+  .page.slide-in-left{
+    display:block;
+    animation:slideInLeft 0.32s cubic-bezier(0.25,0.46,0.45,0.94) forwards;
+  }
+  .page.slide-in-right{
+    display:block;
+    animation:slideInRight 0.32s cubic-bezier(0.25,0.46,0.45,0.94) forwards;
+  }
+  .page.slide-in-up{
+    display:block;
+    animation:slideInUp 0.28s cubic-bezier(0.25,0.46,0.45,0.94) forwards;
+  }
+  .page.slide-in-down{
+    display:block;
+    animation:slideInDown 0.28s cubic-bezier(0.25,0.46,0.45,0.94) forwards;
+  }
+  .page.slide-out-left{
+    display:block;
+    animation:slideOutLeft 0.32s cubic-bezier(0.25,0.46,0.45,0.94) forwards;
+  }
+  .page.slide-out-right{
+    display:block;
+    animation:slideOutRight 0.32s cubic-bezier(0.25,0.46,0.45,0.94) forwards;
+  }
+  .page.slide-out-up{
+    display:block;
+    animation:slideOutUp 0.28s cubic-bezier(0.25,0.46,0.45,0.94) forwards;
+  }
+  .page.slide-out-down{
+    display:block;
+    animation:slideOutDown 0.28s cubic-bezier(0.25,0.46,0.45,0.94) forwards;
+  }
+  @keyframes slideInLeft{from{transform:translateX(100%);opacity:0.7;}to{transform:translateX(0);opacity:1;}}
+  @keyframes slideInRight{from{transform:translateX(-100%);opacity:0.7;}to{transform:translateX(0);opacity:1;}}
+  @keyframes slideInUp{from{transform:translateY(-60px);opacity:0;}to{transform:translateY(0);opacity:1;}}
+  @keyframes slideInDown{from{transform:translateY(60px);opacity:0;}to{transform:translateY(0);opacity:1;}}
+  @keyframes slideOutLeft{from{transform:translateX(0);opacity:1;}to{transform:translateX(-100%);opacity:0.7;}}
+  @keyframes slideOutRight{from{transform:translateX(0);opacity:1;}to{transform:translateX(100%);opacity:0.7;}}
+  @keyframes slideOutUp{from{transform:translateY(0);opacity:1;}to{transform:translateY(-60px);opacity:0;}}
+  @keyframes slideOutDown{from{transform:translateY(0);opacity:1;}to{transform:translateY(60px);opacity:0;}}
 
   /* DASHBOARD */
   .total-card{background:var(--gold-dim);border:1px solid var(--gold-border);border-radius:var(--radius);
@@ -584,6 +633,7 @@
       <button class="modal-confirm" onclick="confirmModal()">确认</button>
     </div>
   </div>
+</div><!-- end pages-container -->
 </div>
 
 <!-- CAT DETAIL MODAL -->
@@ -957,20 +1007,64 @@ function updateMonthLabel(){
 }
 
 // ── PAGES ──
-window.showPage=function(name){
-  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-  document.getElementById('page-'+name).classList.add('active');
+const PAGE_ORDER = ['dashboard','entry','income','history','settings'];
+let currentPage = 'dashboard';
+let isAnimating = false;
+
+window.showPage=function(name, direction){
+  if(name === currentPage) return;
+  if(isAnimating) return;
+  isAnimating = true;
+
+  const oldPage = document.getElementById('page-'+currentPage);
+  const newPage = document.getElementById('page-'+name);
+
+  // Determine direction if not specified
+  if(!direction){
+    const oldIdx = PAGE_ORDER.indexOf(currentPage);
+    const newIdx = PAGE_ORDER.indexOf(name);
+    direction = newIdx > oldIdx ? 'left' : 'right';
+  }
+
+  const inAnim = direction === 'left' ? 'slide-in-left' :
+                 direction === 'right' ? 'slide-in-right' :
+                 direction === 'up' ? 'slide-in-up' : 'slide-in-down';
+  const outAnim = direction === 'left' ? 'slide-out-left' :
+                  direction === 'right' ? 'slide-out-right' :
+                  direction === 'up' ? 'slide-out-up' : 'slide-out-down';
+
+  // Setup new page
+  newPage.style.display = 'block';
+  newPage.classList.remove('active','slide-in-left','slide-in-right','slide-in-up','slide-in-down');
+  newPage.classList.add(inAnim);
+
+  // Animate old page out
+  if(oldPage){
+    oldPage.classList.remove('active');
+    oldPage.classList.add(outAnim);
+    setTimeout(()=>{
+      oldPage.classList.remove(outAnim);
+      oldPage.style.display = '';
+    }, 320);
+  }
+
+  setTimeout(()=>{
+    newPage.classList.remove(inAnim);
+    newPage.classList.add('active');
+    isAnimating = false;
+  }, 320);
+
+  currentPage = name;
+
   document.querySelectorAll('.nav-btn').forEach((b,i)=>{
-    b.classList.toggle('active',['dashboard','entry','income','history','settings'][i]===name);
+    b.classList.toggle('active', PAGE_ORDER[i]===name);
   });
-  document.getElementById('month-bar-el').classList.toggle('hidden',name==='settings');
+  document.getElementById('month-bar-el').classList.toggle('hidden', name==='settings');
+
   if(name==='entry') buildEntry();
   if(name==='income') buildIncomeEntry();
   if(name==='history') renderHist();
-  if(name==='settings'){
-    // Small delay to ensure DOM is ready
-    setTimeout(()=>renderSettings(), 50);
-  }
+  if(name==='settings') setTimeout(()=>renderSettings(), 50);
 };
 
 // ── DASHBOARD ──
@@ -2038,7 +2132,7 @@ function toast(msg){
 
 // ── SWIPE GESTURES ──
 (function(){
-  const PAGES = ['dashboard','entry','income','history','settings'];
+  // PAGE_ORDER is defined globally
   let touchStartX = 0, touchStartY = 0, touchStartTime = 0;
 
   document.addEventListener('touchstart', e => {
@@ -2063,18 +2157,15 @@ function toast(msg){
 
     if(absDx > absDy && absDx > 60) {
       // Horizontal swipe → change page
-      const activePage = document.querySelector('.page.active')?.id?.replace('page-','');
-      const idx = PAGES.indexOf(activePage);
-      if(dx < 0 && idx < PAGES.length-1) showPage(PAGES[idx+1]); // swipe left = next page
-      if(dx > 0 && idx > 0) showPage(PAGES[idx-1]); // swipe right = prev page
+      const idx = PAGE_ORDER.indexOf(currentPage);
+      if(dx < 0 && idx < PAGE_ORDER.length-1) showPage(PAGE_ORDER[idx+1], 'left');
+      if(dx > 0 && idx > 0) showPage(PAGE_ORDER[idx-1], 'right');
     } else if(absDy > absDx && absDy > 60) {
       // Vertical swipe on dashboard/history → change month
-      const activePage = document.querySelector('.page.active')?.id;
-      if(activePage === 'page-dashboard' || activePage === 'page-history') {
-        // Only if not scrolling content (near top of page)
+      if(currentPage === 'dashboard' || currentPage === 'history') {
         if(window.scrollY < 50) {
-          if(dy < 0) changeMonth(1);  // swipe up = next month
-          if(dy > 0) changeMonth(-1); // swipe down = prev month
+          if(dy < 0) changeMonth(1);
+          if(dy > 0) changeMonth(-1);
         }
       }
     }
