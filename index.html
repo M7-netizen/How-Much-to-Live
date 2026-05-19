@@ -2197,185 +2197,198 @@ function toast(msg){
 }
 
 
-// ── SWIPE GESTURES (drag-follow) ──
+// ── SWIPE GESTURES ──
 (function(){
-  let startX=0,startY=0,lastX=0,lastTime=0,velocity=0;
-  let dragging=false,lockDir=null,dragOffset=0,swipeDir=null;
-  let monthSwipe=false; // true when swiping to change month on dashboard
-  const THRESHOLD=0.25, VEL_THRESHOLD=0.25;
+  // State
+  var sx=0, sy=0,        // touch start x/y
+      ox=0,              // current drag offset (positive = finger moved right)
+      vx=0,              // velocity
+      lx=0, lt=0,        // last x, last time (for velocity)
+      dir=null,          // locked direction: 'h' or 'v'
+      sideL=null,        // page to the LEFT  of currentPage (or null)
+      sideR=null,        // page to the RIGHT of currentPage (or null)
+      isMonth=false,     // true when this is a month-change swipe on dashboard
+      busy=false,        // animation in progress
+      active=false;      // touchstart accepted
+
+  var THRESH=0.25, VTHRESH=0.4;
 
   function W(){ return window.innerWidth; }
 
-  // Is curM/curY the real current month?
-  function isCurrentMonth(){
-    const n=new Date();
-    return curY===n.getFullYear() && curM===n.getMonth()+1;
-  }
+  // Work out what neighbours exist for the current page/month state
+  function calcSides(){
+    var today = new Date();
+    var ty = today.getFullYear(), tm = today.getMonth()+1;
+    var atCurrent = (curY===ty && curM===tm);
 
-  // Returns the page name to navigate to, or null (month swipes handled separately)
-  function getPageSibling(dir){
-    const idx=PAGE_ORDER.indexOf(currentPage);
-    if(dir==='left'  && idx < PAGE_ORDER.length-1) return PAGE_ORDER[idx+1];
-    if(dir==='right' && idx > 0)                   return PAGE_ORDER[idx-1];
-    return null;
-  }
-
-  // On dashboard: right = prev month, left = next month (or entry if already current)
-  function getDashboardSwipe(dir){
-    if(currentPage !== 'dashboard') return null;
-    if(dir==='right') return 'prevMonth';
-    if(dir==='left'){
-      if(!isCurrentMonth()) return 'nextMonth';
-      return null; // fall through to page nav (→ entry)
+    if(currentPage==='dashboard'){
+      // RIGHT neighbour (finger moves right → go to previous month)
+      sideR = 'MONTH_PREV';
+      // LEFT neighbour (finger moves left)
+      //   if not at current month → go to next month
+      //   if at current month     → go to entry page
+      sideL = atCurrent ? 'entry' : 'MONTH_NEXT';
+    } else {
+      var idx = PAGE_ORDER.indexOf(currentPage);
+      sideL = (idx < PAGE_ORDER.length-1) ? PAGE_ORDER[idx+1] : null;
+      sideR = (idx > 0)                   ? PAGE_ORDER[idx-1] : null;
     }
-    return null;
+    isMonth = false; // reset; set per-gesture below
   }
 
-  function setupPage(dir){
-    const mSwipe = getDashboardSwipe(dir);
-    if(mSwipe){
-      // Month swipe: just lock current page in place, no second page needed
-      monthSwipe = true;
-      const curEl = document.getElementById('page-dashboard');
-      const container = document.getElementById('pages-container');
-      container.style.height = curEl.offsetHeight + 'px';
-      curEl.style.cssText = 'position:absolute;top:0;left:0;width:100%;';
-      return true;
-    }
-    monthSwipe = false;
-    const next = getPageSibling(dir);
-    if(!next) return false;
-    const curEl  = document.getElementById('page-'+currentPage);
-    const nextEl = document.getElementById('page-'+next);
-    const container = document.getElementById('pages-container');
-    container.style.height = curEl.offsetHeight + 'px';
-    nextEl.style.cssText = `display:block;position:absolute;top:0;left:0;width:100%;transform:translateX(${dir==='left'?W():-W()}px)`;
-    curEl.style.cssText  = 'position:absolute;top:0;left:0;width:100%;';
-    return true;
+  // Prepare the next real page (not month) off-screen
+  function prepPage(pageId, onLeft){
+    var el = document.getElementById('page-'+pageId);
+    el.style.cssText = 'display:block;position:absolute;top:0;left:0;width:100%;'
+      + 'transform:translateX('+(onLeft ? W() : -W())+'px)';
   }
 
-  function applyDrag(offset){
-    const curEl = document.getElementById('page-'+currentPage);
-    curEl.style.transform = `translateX(${offset}px)`;
-    if(!monthSwipe){
-      const dir  = offset < 0 ? 'left' : 'right';
-      const next = getPageSibling(dir);
-      if(next){
-        document.getElementById('page-'+next).style.transform =
-          `translateX(${(dir==='left'?W():-W())+offset}px)`;
+  // Lock the current page in place (for dragging)
+  function lockCurrent(){
+    var el = document.getElementById('page-'+currentPage);
+    var h  = el.offsetHeight;
+    document.getElementById('pages-container').style.height = h+'px';
+    el.style.cssText = 'position:absolute;top:0;left:0;width:100%;';
+  }
+
+  // Move current + neighbour together
+  function applyOffset(offset){
+    var curEl = document.getElementById('page-'+currentPage);
+    curEl.style.transform = 'translateX('+offset+'px)';
+    if(!isMonth){
+      // which real page is in the direction of drag?
+      var neighbour = offset < 0 ? sideL : sideR;
+      if(neighbour && neighbour!=='MONTH_PREV' && neighbour!=='MONTH_NEXT'){
+        var nEl = document.getElementById('page-'+neighbour);
+        nEl.style.transform = 'translateX('+(offset + (offset<0 ? W() : -W()))+'px)';
       }
     }
   }
 
-  function finalizePage(next, dir, dur){
-    const ease  = 'cubic-bezier(0.4,0,0.2,1)';
-    const curEl = document.getElementById('page-'+currentPage);
-    const nextEl= document.getElementById('page-'+next);
-    curEl.style.transition  = `transform ${dur}ms ${ease}`;
-    curEl.style.transform   = `translateX(${dir==='left'?-W():W()}px)`;
-    nextEl.style.transition = `transform ${dur}ms ${ease}`;
-    nextEl.style.transform  = 'translateX(0)';
-    setTimeout(()=>{
+  // Animate to a new page
+  function goPage(target, fingerWentLeft, snapDur){
+    var ease = 'cubic-bezier(0.4,0,0.2,1)';
+    var curEl = document.getElementById('page-'+currentPage);
+    var nEl   = document.getElementById('page-'+target);
+    curEl.style.transition = 'transform '+snapDur+'ms '+ease;
+    curEl.style.transform  = 'translateX('+(fingerWentLeft ? -W() : W())+'px)';
+    nEl.style.transition   = 'transform '+snapDur+'ms '+ease;
+    nEl.style.transform    = 'translateX(0)';
+    setTimeout(function(){
       curEl.removeAttribute('style'); curEl.classList.remove('active'); curEl.style.display='none';
-      nextEl.removeAttribute('style'); nextEl.classList.add('active');
-      currentPage = next;
-      document.querySelectorAll('.nav-btn').forEach((b,i)=>{
+      nEl.removeAttribute('style');   nEl.classList.add('active');
+      currentPage = target;
+      document.querySelectorAll('.nav-btn').forEach(function(b,i){
         b.classList.toggle('active', PAGE_ORDER[i]===currentPage);
       });
       document.getElementById('month-bar-el').classList.toggle('hidden', currentPage==='settings');
-      if(currentPage==='entry')    buildEntry();
-      if(currentPage==='income')   buildIncomeEntry();
-      if(currentPage==='history')  renderHist();
-      if(currentPage==='settings') setTimeout(()=>renderSettings(),50);
-      reset(); isAnimating=false;
-    }, dur);
+      if(currentPage==='entry')   buildEntry();
+      if(currentPage==='income')  buildIncomeEntry();
+      if(currentPage==='history') renderHist();
+      if(currentPage==='settings') setTimeout(function(){ renderSettings(); },50);
+      cleanup(); busy=false;
+    }, snapDur);
   }
 
-  function snapBack(dur){
-    const ease  = 'cubic-bezier(0.25,0.46,0.45,0.94)';
-    const curEl = document.getElementById('page-'+currentPage);
-    curEl.style.transition = `transform ${dur}ms ${ease}`;
+  // Snap current page back to centre
+  function snapBack(snapDur){
+    var ease  = 'cubic-bezier(0.25,0.46,0.45,0.94)';
+    var curEl = document.getElementById('page-'+currentPage);
+    curEl.style.transition = 'transform '+snapDur+'ms '+ease;
     curEl.style.transform  = 'translateX(0)';
-    if(!monthSwipe && swipeDir){
-      const next = getPageSibling(swipeDir);
-      if(next){
-        const nextEl = document.getElementById('page-'+next);
-        nextEl.style.transition = `transform ${dur}ms ${ease}`;
-        nextEl.style.transform  = `translateX(${swipeDir==='left'?W():-W()}px)`;
-        setTimeout(()=>{ nextEl.removeAttribute('style'); nextEl.style.display='none'; }, dur);
-      }
+    // also snap neighbour back if it was a real page
+    var neighbour = ox < 0 ? sideL : sideR;
+    if(!isMonth && neighbour && neighbour!=='MONTH_PREV' && neighbour!=='MONTH_NEXT'){
+      var nEl = document.getElementById('page-'+neighbour);
+      nEl.style.transition = 'transform '+snapDur+'ms '+ease;
+      nEl.style.transform  = 'translateX('+(ox<0 ? W() : -W())+'px)';
+      setTimeout(function(){ nEl.removeAttribute('style'); nEl.style.display='none'; }, snapDur);
     }
-    setTimeout(()=>{
-      document.getElementById('pages-container').style.height = '';
+    setTimeout(function(){
+      document.getElementById('pages-container').style.height='';
       curEl.removeAttribute('style'); curEl.classList.add('active');
-      reset(); isAnimating=false;
-    }, dur);
+      cleanup(); busy=false;
+    }, snapDur);
   }
 
-  function reset(){ dragging=false; lockDir=null; dragOffset=0; velocity=0; monthSwipe=false; swipeDir=null; }
+  function cleanup(){
+    active=false; dir=null; ox=0; vx=0; isMonth=false;
+  }
 
-  document.addEventListener('touchstart', e=>{
-    if(isAnimating) return;
+  // ── TOUCH START ──
+  document.addEventListener('touchstart', function(e){
+    if(busy) return;
     if(e.target.closest('input,select,textarea,button,.myr-box,.settings-cat-body,.modal-overlay,#cat-detail-overlay,#edit-overlay,.amount-row')) return;
-    startX=lastX=e.touches[0].clientX;
-    startY=e.touches[0].clientY;
-    lastTime=Date.now();
-    dragging=true; lockDir=null; dragOffset=0;
+    sx = lx = e.touches[0].clientX;
+    sy = e.touches[0].clientY;
+    lt = Date.now();
+    ox=0; vx=0; dir=null; active=true;
+    calcSides();
   },{passive:true});
 
-  document.addEventListener('touchmove', e=>{
-    if(!dragging||isAnimating) return;
-    const x=e.touches[0].clientX, y=e.touches[0].clientY;
-    const now=Date.now(), dt=Math.max(now-lastTime,1);
-    velocity=(x-lastX)/dt; lastX=x; lastTime=now;
-    const dx=x-startX, dy=y-startY;
+  // ── TOUCH MOVE ──
+  document.addEventListener('touchmove', function(e){
+    if(!active||busy) return;
+    var x  = e.touches[0].clientX;
+    var y  = e.touches[0].clientY;
+    var now= Date.now();
+    var dt = Math.max(now-lt, 1);
+    vx = (x-lx)/dt; lx=x; lt=now;
+    var dx = x-sx, dy = y-sy;
 
-    if(!lockDir){
-      if(Math.abs(dx)>5||Math.abs(dy)>5){
-        lockDir = Math.abs(dx)>Math.abs(dy) ? 'h' : 'v';
-        if(lockDir==='h'){
-          swipeDir = dx<0?'left':'right';
-          if(!setupPage(swipeDir)){ dragging=false; return; }
-        }
+    // Lock direction on first significant movement
+    if(!dir){
+      if(Math.abs(dx)<5 && Math.abs(dy)<5) return;
+      dir = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
+      if(dir==='h'){
+        // dx>0 = finger moved right = user wants to see LEFT content = sideR
+        // dx<0 = finger moved left  = user wants to see RIGHT content = sideL
+        var wantSide = dx>0 ? sideR : sideL;
+        if(!wantSide){ active=false; return; } // no neighbour, bail
+        isMonth = (wantSide==='MONTH_PREV'||wantSide==='MONTH_NEXT');
+        lockCurrent();
+        if(!isMonth) prepPage(wantSide, dx<0); // place page off-screen
       }
-      return;
     }
-    if(lockDir==='h'){
-      if(e.target.closest('input,select,textarea,.amount-row,.myr-box')){ dragging=false; return; }
+
+    if(dir==='h'){
+      if(e.target.closest('input,select,textarea,.amount-row,.myr-box')){ active=false; return; }
       e.preventDefault();
-      // rubber-band if no target in initial swipe direction
-      const hasTarget = monthSwipe || !!getPageSibling(swipeDir);
-      dragOffset = hasTarget ? dx : dx*0.12;
-      applyDrag(dragOffset);
+      // rubber-band at edges
+      var wantSide = dx>0 ? sideR : sideL;
+      ox = wantSide ? dx : dx*0.15;
+      applyOffset(ox);
     }
   },{passive:false});
 
-  document.addEventListener('touchend', e=>{
-    if(!dragging) return;
-    if(lockDir==='h'){
-      const abs  = Math.abs(dragOffset);
-      const absV = Math.abs(velocity);
-      const commit = abs>W()*THRESHOLD || (absV>VEL_THRESHOLD && abs>15);
-      const progress = abs/W();
-      const dur = Math.max(200, Math.round(380*(1-progress*0.5)));
-      isAnimating = true;
+  // ── TOUCH END ──
+  document.addEventListener('touchend', function(e){
+    if(!active) return;
+    if(dir==='h'){
+      var abs    = Math.abs(ox);
+      var commit = abs > W()*THRESH || (Math.abs(vx)>VTHRESH && abs>15);
+      var dur    = Math.max(180, Math.round(340*(1-abs/W()*0.5)));
+      var fingerWentLeft = ox < 0;  // true = finger moved left = going to sideL
+      var target = fingerWentLeft ? sideL : sideR;
 
-      if(commit && monthSwipe){
-        // right swipe = prev month (-1), left swipe = next month (+1)
-        const delta = swipeDir==='right' ? -1 : 1;
+      busy = true;
+
+      if(commit && target==='MONTH_PREV'){
         snapBack(dur);
-        setTimeout(()=>{ changeMonth(delta); }, dur/2);
-      } else if(commit && !monthSwipe){
-        const next = getPageSibling(swipeDir);
-        if(next){ finalizePage(next, swipeDir, dur); }
-        else { snapBack(Math.min(dur,350)); }
+        setTimeout(function(){ changeMonth(-1); }, dur*0.4);
+      } else if(commit && target==='MONTH_NEXT'){
+        snapBack(dur);
+        setTimeout(function(){ changeMonth(1); }, dur*0.4);
+      } else if(commit && target){
+        goPage(target, fingerWentLeft, dur);
       } else {
-        snapBack(Math.min(Math.max(280, Math.round(350*(abs/W()))), 350));
+        snapBack(Math.min(Math.max(200, Math.round(300*(abs/W()))), 320));
       }
     } else {
-      reset();
+      active=false;
     }
   },{passive:true});
+
 })();// ── START ──
 updateMonthLabel();
 init();
