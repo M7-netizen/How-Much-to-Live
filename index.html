@@ -1,4 +1,4 @@
-<!-- build:20260519063942931200 -->
+<!-- build:20260519064507986516 -->
 <!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -967,7 +967,10 @@ window.showPage=function(name){
   if(name==='entry') buildEntry();
   if(name==='income') buildIncomeEntry();
   if(name==='history') renderHist();
-  if(name==='settings') renderSettings();
+  if(name==='settings'){
+    // Small delay to ensure DOM is ready
+    setTimeout(()=>renderSettings(), 50);
+  }
 };
 
 // ── DASHBOARD ──
@@ -1270,7 +1273,7 @@ function renderSettings(keepOpenId){
 
   // Render income cats
   const ilist = document.getElementById('income-settings-list');
-  if(!ilist) return;
+  if(!ilist) { console.log('income-settings-list not found'); return; }
   const iOpenIds = keepOpenId ? [keepOpenId] : [...ilist.querySelectorAll('.settings-cat.open')].map(el=>el.dataset.id);
   ilist.innerHTML='';
   incomeCats.forEach(cat=>{
