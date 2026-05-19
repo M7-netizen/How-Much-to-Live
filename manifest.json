@@ -4,7 +4,7 @@
   "description": "活着要多少钱",
   "start_url": "/How-Much-to-Live/",
   "display": "standalone",
-  "background_color": "#FAF5EE",
+  "background_color": "#0f0f0b",
   "theme_color": "#0f0f0b",
   "orientation": "portrait",
   "icons": [
