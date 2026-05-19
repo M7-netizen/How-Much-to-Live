@@ -2278,11 +2278,7 @@ function toast(msg){
         b.classList.toggle('active',PAGE_ORDER[i]===currentPage);
       });
       document.getElementById('month-bar-el').classList.toggle('hidden',currentPage==='settings');
-      if(currentPage==='entry')buildEntry();
-      if(currentPage==='income')buildIncomeEntry();
-      if(currentPage==='history')renderHist();
-      if(currentPage==='settings')setTimeout(()=>renderSettings(),50);
-      // Release lock FIRST before any render calls that might throw
+      // Release lock BEFORE render calls
       dragging=false;lockDir=null;lockedDir=null;dragOffset=0;velocity=0;
       swipeBusy=false;
       log(`READY: page=${currentPage} isAnim=${isAnimating} busy=${swipeBusy}`);
