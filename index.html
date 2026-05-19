@@ -2201,8 +2201,14 @@ function toast(msg){
 (function(){
   let startX=0,startY=0,lastX=0,lastTime=0,velocity=0;
   let dragging=false,lockDir=null,dragOffset=0,lockedDir=null;
-  let swipeBusy=false; // separate from isAnimating, only for swipe
+  let swipeBusy=false;
   const THRESHOLD=0.25,VEL_THRESHOLD=0.25;
+
+  // Debug overlay
+  const dbg=document.createElement('div');
+  dbg.style.cssText='position:fixed;bottom:80px;left:0;right:0;z-index:9999;background:rgba(0,0,0,0.8);color:#C9A96E;font-size:11px;padding:6px 10px;font-family:monospace;pointer-events:none;';
+  document.body.appendChild(dbg);
+  function log(msg){dbg.textContent=msg;}
 
   function W(){return window.innerWidth;}
 
@@ -2229,7 +2235,7 @@ function toast(msg){
   function setupAdjacentPage(dir){
     const next=getSibling(dir);
     if(!next)return false;
-    if(isMonth(next))return true; // no DOM changes for month
+    if(isMonth(next))return true;
     const nextEl=document.getElementById('page-'+next);
     const curEl=document.getElementById('page-'+currentPage);
     const h=curEl.offsetHeight;
@@ -2254,6 +2260,7 @@ function toast(msg){
   }
 
   function finalizePage(next,dir,dur){
+    log(`finalizePage: ${currentPage}→${next} dir=${dir} dur=${dur}`);
     const ease='cubic-bezier(0.4,0,0.2,1)';
     const curEl=document.getElementById('page-'+currentPage);
     const nextEl=document.getElementById('page-'+next);
@@ -2262,11 +2269,11 @@ function toast(msg){
     nextEl.style.transition=`transform ${dur}ms ${ease}`;
     nextEl.style.transform='translateX(0)';
     setTimeout(()=>{
+      log(`finalizePage DONE: now=${next} isAnim=${isAnimating} busy=${swipeBusy}`);
       curEl.removeAttribute('style');curEl.classList.remove('active');curEl.style.display='none';
       nextEl.removeAttribute('style');nextEl.classList.add('active');
       document.getElementById('pages-container').style.height='';
       currentPage=next;
-      // Update nav highlight
       document.querySelectorAll('.nav-btn').forEach((b,i)=>{
         b.classList.toggle('active',PAGE_ORDER[i]===currentPage);
       });
@@ -2277,6 +2284,7 @@ function toast(msg){
       if(currentPage==='settings')setTimeout(()=>renderSettings(),50);
       dragging=false;lockDir=null;lockedDir=null;dragOffset=0;velocity=0;
       swipeBusy=false;
+      log(`READY: page=${currentPage} isAnim=${isAnimating} busy=${swipeBusy}`);
     },dur);
   }
 
@@ -2297,10 +2305,12 @@ function toast(msg){
       curEl.removeAttribute('style');curEl.classList.add('active');
       dragging=false;lockDir=null;lockedDir=null;dragOffset=0;velocity=0;
       swipeBusy=false;
+      log(`snapBack DONE: page=${currentPage}`);
     },dur);
   }
 
   document.addEventListener('touchstart',e=>{
+    log(`touchstart: page=${currentPage} busy=${swipeBusy} isAnim=${isAnimating}`);
     if(swipeBusy||isAnimating)return;
     if(e.target.closest('input,select,textarea,button,.myr-box,.settings-cat-body,.modal-overlay,#cat-detail-overlay,#edit-overlay,.amount-row'))return;
     startX=lastX=e.touches[0].clientX;
@@ -2321,6 +2331,8 @@ function toast(msg){
         lockDir=Math.abs(dx)>Math.abs(dy)?'h':'v';
         if(lockDir==='h'){
           lockedDir=dx<0?'left':'right';
+          const sib=getSibling(lockedDir);
+          log(`lock: ${lockedDir} → ${sib}`);
           if(!setupAdjacentPage(lockedDir)){dragging=false;return;}
         }
       }
@@ -2340,6 +2352,7 @@ function toast(msg){
       const abs=Math.abs(dragOffset),absV=Math.abs(velocity);
       const commit=abs>W()*THRESHOLD||(absV>VEL_THRESHOLD&&abs>15);
       const next=getSibling(lockedDir);
+      log(`touchend: commit=${commit} next=${next} abs=${Math.round(abs)}`);
       swipeBusy=true;
 
       if(commit&&isMonth(next)){
