@@ -2200,7 +2200,7 @@ function toast(msg){
 // ── SWIPE GESTURES (drag-follow) ──
 (function(){
   let startX=0,startY=0,lastX=0,lastTime=0,velocity=0;
-  let dragging=false,lockDir=null,dragOffset=0;
+  let dragging=false,lockDir=null,dragOffset=0,swipeDir=null;
   let monthSwipe=false; // true when swiping to change month on dashboard
   const THRESHOLD=0.25, VEL_THRESHOLD=0.25;
 
@@ -2293,16 +2293,15 @@ function toast(msg){
 
   function snapBack(dur){
     const ease  = 'cubic-bezier(0.25,0.46,0.45,0.94)';
-    const dir   = dragOffset < 0 ? 'left' : 'right';
     const curEl = document.getElementById('page-'+currentPage);
     curEl.style.transition = `transform ${dur}ms ${ease}`;
     curEl.style.transform  = 'translateX(0)';
-    if(!monthSwipe){
-      const next = getPageSibling(dir);
+    if(!monthSwipe && swipeDir){
+      const next = getPageSibling(swipeDir);
       if(next){
         const nextEl = document.getElementById('page-'+next);
         nextEl.style.transition = `transform ${dur}ms ${ease}`;
-        nextEl.style.transform  = `translateX(${dir==='left'?W():-W()}px)`;
+        nextEl.style.transform  = `translateX(${swipeDir==='left'?W():-W()}px)`;
         setTimeout(()=>{ nextEl.removeAttribute('style'); nextEl.style.display='none'; }, dur);
       }
     }
@@ -2313,7 +2312,7 @@ function toast(msg){
     }, dur);
   }
 
-  function reset(){ dragging=false; lockDir=null; dragOffset=0; velocity=0; monthSwipe=false; }
+  function reset(){ dragging=false; lockDir=null; dragOffset=0; velocity=0; monthSwipe=false; swipeDir=null; }
 
   document.addEventListener('touchstart', e=>{
     if(isAnimating) return;
@@ -2335,8 +2334,8 @@ function toast(msg){
       if(Math.abs(dx)>5||Math.abs(dy)>5){
         lockDir = Math.abs(dx)>Math.abs(dy) ? 'h' : 'v';
         if(lockDir==='h'){
-          const dir = dx<0?'left':'right';
-          if(!setupPage(dir)){ dragging=false; return; }
+          swipeDir = dx<0?'left':'right';
+          if(!setupPage(swipeDir)){ dragging=false; return; }
         }
       }
       return;
@@ -2344,9 +2343,8 @@ function toast(msg){
     if(lockDir==='h'){
       if(e.target.closest('input,select,textarea,.amount-row,.myr-box')){ dragging=false; return; }
       e.preventDefault();
-      const dir = dx<0?'left':'right';
-      // rubber-band if no target
-      const hasTarget = monthSwipe || !!getPageSibling(dir);
+      // rubber-band if no target in initial swipe direction
+      const hasTarget = monthSwipe || !!getPageSibling(swipeDir);
       dragOffset = hasTarget ? dx : dx*0.12;
       applyDrag(dragOffset);
     }
@@ -2355,7 +2353,6 @@ function toast(msg){
   document.addEventListener('touchend', e=>{
     if(!dragging) return;
     if(lockDir==='h'){
-      const dir  = dragOffset<0?'left':'right';
       const abs  = Math.abs(dragOffset);
       const absV = Math.abs(velocity);
       const commit = abs>W()*THRESHOLD || (absV>VEL_THRESHOLD && abs>15);
@@ -2364,12 +2361,13 @@ function toast(msg){
       isAnimating = true;
 
       if(commit && monthSwipe){
-        // Snap back page visually, then change month
+        // right swipe = prev month (-1), left swipe = next month (+1)
+        const delta = swipeDir==='right' ? -1 : 1;
         snapBack(dur);
-        setTimeout(()=>{ changeMonth(dir==='right'?-1:1); }, dur/2);
+        setTimeout(()=>{ changeMonth(delta); }, dur/2);
       } else if(commit && !monthSwipe){
-        const next = getPageSibling(dir);
-        if(next){ finalizePage(next, dir, dur); }
+        const next = getPageSibling(swipeDir);
+        if(next){ finalizePage(next, swipeDir, dur); }
         else { snapBack(Math.min(dur,350)); }
       } else {
         snapBack(Math.min(Math.max(280, Math.round(350*(abs/W()))), 350));
