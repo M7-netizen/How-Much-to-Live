@@ -1,4 +1,4 @@
-<!-- build:20260519090225404198 -->
+<!-- build:20260519090846992662 -->
 <!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -74,11 +74,12 @@
   #month-bar-el.hidden{opacity:0;pointer-events:none;}
 
   /* PAGES */
-  .pages-container{position:relative;overflow:hidden;}
+  .pages-container{position:relative;overflow:hidden;min-height:0;}
   .page{
     display:none;
-    position:absolute;top:0;left:0;width:100%;
+    width:100%;
     will-change:transform;
+    box-sizing:border-box;
   }
   .page.active{
     display:block;
@@ -415,14 +416,8 @@
 <header>
   <div class="header-top">
     <div class="logo-wrap">
-      <div class="logo-cat">
-        <div class="logo-cat-circle"></div>
-        <span class="logo-cat-emoji">🐱</span>
-      </div>
-      <div class="logo-texts">
-        <span class="logo-title">活着要多少钱？</span>
-        <span class="logo-subtitle">每一笔，都是生活的样子。</span>
-      </div>
+      <img src="icon-192.png" alt="logo" style="width:32px;height:32px;border-radius:8px;object-fit:cover;flex-shrink:0;">
+      <span class="logo-text">活着要多少钱</span>
     </div>
   </div>
   <nav>
@@ -2155,8 +2150,12 @@ function toast(msg){
     if(!next)return false;
     const nextEl=document.getElementById('page-'+next);
     const curEl=document.getElementById('page-'+currentPage);
+    const container=document.getElementById('pages-container');
+    const h=curEl.offsetHeight;
+    // Lock container height to prevent layout shift during drag
+    container.style.height=h+'px';
     nextEl.style.cssText=`display:block;position:absolute;top:0;left:0;width:100%;transform:translateX(${dir==='left'?W():-W()}px)`;
-    curEl.style.position='relative';
+    curEl.style.cssText=`position:absolute;top:0;left:0;width:100%;`;
     return true;
   }
 
@@ -2180,8 +2179,9 @@ function toast(msg){
     nextEl.style.transition=`transform ${dur}ms ${ease}`;
     nextEl.style.transform='translateX(0)';
     setTimeout(()=>{
-      curEl.style.cssText='';curEl.classList.remove('active');
-      nextEl.style.cssText='';nextEl.classList.add('active');
+      // Clean reset - remove ALL inline styles to restore normal flow
+      curEl.removeAttribute('style');curEl.classList.remove('active');curEl.style.display='none';
+      nextEl.removeAttribute('style');nextEl.classList.add('active');
       currentPage=next;
       document.querySelectorAll('.nav-btn').forEach((b,i)=>{
         b.classList.toggle('active',PAGE_ORDER[i]===currentPage);
@@ -2206,9 +2206,13 @@ function toast(msg){
       const nextEl=document.getElementById('page-'+next);
       nextEl.style.transition=`transform ${dur}ms ${ease}`;
       nextEl.style.transform=`translateX(${dir==='left'?W():-W()}px)`;
-      setTimeout(()=>{nextEl.style.cssText='';},dur);
+      setTimeout(()=>{nextEl.removeAttribute('style');nextEl.style.display='none';},dur);
     }
-    setTimeout(()=>{curEl.style.cssText='';curEl.classList.add('active');reset();isAnimating=false;},dur);
+    setTimeout(()=>{
+      document.getElementById('pages-container').style.height='';
+      curEl.removeAttribute('style');curEl.classList.add('active');
+      reset();isAnimating=false;
+    },dur);
   }
 
   function reset(){dragging=false;lockDir=null;dragOffset=0;velocity=0;}
