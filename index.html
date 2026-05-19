@@ -1,4 +1,4 @@
-<!-- build:20260519035910 -->
+<!-- build:20260519053846 -->
 <!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -537,6 +537,12 @@
         <button class="add-cat-btn" onclick="openAddCatModal()">＋ 新增类别</button>
       </div>
       <div class="settings-list" id="settings-list"></div>
+
+      <div class="settings-header" style="margin-top:28px;">
+        <div class="settings-title">收入类别</div>
+        <button class="add-cat-btn" style="background:#6BA89A;" onclick="openAddIncomeCatModal()">＋ 新增类别</button>
+      </div>
+      <div class="settings-list" id="income-settings-list"></div>
     </div>
   </div>
 </div>
@@ -1217,7 +1223,6 @@ window.delTxnFn=async function(id){
 // ── SETTINGS ──
 function renderSettings(keepOpenId){
   const list=document.getElementById('settings-list');
-  // Remember which cats are open before re-render
   const openIds = keepOpenId ? [keepOpenId] : [...list.querySelectorAll('.settings-cat.open')].map(el=>el.dataset.id);
   list.innerHTML='';
   cats.forEach(cat=>{
@@ -1244,6 +1249,37 @@ function renderSettings(keepOpenId){
     list.appendChild(el);
     renderSubTags(cat.id);
     if(openIds.includes(cat.id)) el.classList.add('open');
+  });
+
+  // Render income cats
+  const ilist = document.getElementById('income-settings-list');
+  if(!ilist) return;
+  const iOpenIds = keepOpenId ? [keepOpenId] : [...ilist.querySelectorAll('.settings-cat.open')].map(el=>el.dataset.id);
+  ilist.innerHTML='';
+  incomeCats.forEach(cat=>{
+    const el=document.createElement('div');el.className='settings-cat';el.dataset.id=cat.id;
+    el.innerHTML=`
+      <div class="settings-cat-header" onclick="toggleSCat(this)">
+        <span class="drag-handle">⠿</span>
+        <span class="settings-cat-emoji">${cat.emoji}</span>
+        <span class="settings-cat-name">${cat.label}</span>
+        <div class="settings-cat-actions">
+          <span class="color-swatch" style="background:${cat.color}"></span>
+          <button class="icon-btn" onclick="event.stopPropagation();openEditIncomeCat('${cat.id}')">编辑</button>
+          <button class="icon-btn danger" onclick="event.stopPropagation();delIncomeCat('${cat.id}')">删除</button>
+        </div>
+      </div>
+      <div class="settings-cat-body">
+        <div class="sub-tags" id="istags-${cat.id}"></div>
+        <div class="add-sub-row">
+          <input class="add-sub-input" id="isinput-${cat.id}" placeholder="输入细分名称，按 Enter 添加"
+            onkeydown="if(event.key==='Enter')addIncomeSub('${cat.id}')">
+          <button class="add-sub-btn" onclick="addIncomeSub('${cat.id}')">添加</button>
+        </div>
+      </div>`;
+    ilist.appendChild(el);
+    renderIncomeSubTags(cat.id);
+    if(iOpenIds.includes(cat.id)) el.classList.add('open');
   });
 }
 window.toggleSCat=function(h){h.parentElement.classList.toggle('open');};
@@ -1365,7 +1401,10 @@ window.openEdit=function(catId){
   document.getElementById('modal-overlay').classList.add('open');
 };
 window.closeModalOutside=function(e){if(e.target===document.getElementById('modal-overlay'))closeModal();};
-window.closeModal=function(){document.getElementById('modal-overlay').classList.remove('open');};
+window.closeModal=function(){
+  document.getElementById('modal-overlay').classList.remove('open');
+  document.getElementById('modal-myr').parentElement.parentElement.parentElement.style.display='';
+};
 window.confirmModal=async function(){
   const emoji=document.getElementById('modal-emoji').value.trim()||'📦';
   const name=document.getElementById('modal-name').value.trim();
