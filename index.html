@@ -2210,7 +2210,25 @@ function toast(msg){
   const THRESHOLD=0.25,VEL_THRESHOLD=0.25;
 
   function W(){return window.innerWidth;}
+  const todayY=new Date().getFullYear(), todayM=new Date().getMonth()+1;
+  function isCurrentMonth(){ return curY===todayY && curM===todayM; }
+
   function getSibling(dir){
+    // On dashboard: swipe handles months first, then page nav
+    if(currentPage==='dashboard'){
+      if(dir==='right'){
+        // right swipe = go to previous month (always possible)
+        return '__prevMonth__';
+      }
+      if(dir==='left'){
+        if(!isCurrentMonth()){
+          // not current month yet → go forward in time (next month)
+          return '__nextMonth__';
+        }
+        // already at current month → go to entry page
+        return 'entry';
+      }
+    }
     const idx=PAGE_ORDER.indexOf(currentPage);
     if(dir==='left'&&idx<PAGE_ORDER.length-1)return PAGE_ORDER[idx+1];
     if(dir==='right'&&idx>0)return PAGE_ORDER[idx-1];
@@ -2220,11 +2238,18 @@ function toast(msg){
   function setupAdjacentPage(dir){
     const next=getSibling(dir);
     if(!next)return false;
+    // Month sentinels: just preview the same dashboard page shifted
+    if(next==='__prevMonth__'||next==='__nextMonth__'){
+      const curEl=document.getElementById('page-dashboard');
+      const container=document.getElementById('pages-container');
+      container.style.height=curEl.offsetHeight+'px';
+      curEl.style.cssText=`position:absolute;top:0;left:0;width:100%;`;
+      return true;
+    }
     const nextEl=document.getElementById('page-'+next);
     const curEl=document.getElementById('page-'+currentPage);
     const container=document.getElementById('pages-container');
     const h=curEl.offsetHeight;
-    // Lock container height to prevent layout shift during drag
     container.style.height=h+'px';
     nextEl.style.cssText=`display:block;position:absolute;top:0;left:0;width:100%;transform:translateX(${dir==='left'?W():-W()}px)`;
     curEl.style.cssText=`position:absolute;top:0;left:0;width:100%;`;
@@ -2236,7 +2261,7 @@ function toast(msg){
     curEl.style.transform=`translateX(${offset}px)`;
     const dir=offset<0?'left':'right';
     const next=getSibling(dir);
-    if(next){
+    if(next && next!=='__prevMonth__' && next!=='__nextMonth__'){
       const nextEl=document.getElementById('page-'+next);
       nextEl.style.transform=`translateX(${(dir==='left'?W():-W())+offset}px)`;
     }
@@ -2291,7 +2316,7 @@ function toast(msg){
 
   document.addEventListener('touchstart',e=>{
     if(isAnimating)return;
-    if(e.target.closest('input,select,textarea,button,.myr-box,.settings-cat-body,.modal-overlay,#cat-detail-overlay,#edit-overlay'))return;
+    if(e.target.closest('input,select,textarea,button,.myr-box,.settings-cat-body,.modal-overlay,#cat-detail-overlay,#edit-overlay,.amount-row,#amt-input,#income-amt-input'))return;
     startX=lastX=e.touches[0].clientX;
     startY=e.touches[0].clientY;
     lastTime=Date.now();
@@ -2316,6 +2341,8 @@ function toast(msg){
       return;
     }
     if(lockDir==='h'){
+      // Don't hijack scroll on input elements
+      if(e.target.closest('input,select,textarea,.amount-row,.myr-box')){dragging=false;return;}
       e.preventDefault();
       const dir=dx<0?'left':'right';
       dragOffset=getSibling(dir)?dx:dx*0.12;
@@ -2332,19 +2359,20 @@ function toast(msg){
       const next=getSibling(dir);
       isAnimating=true;
       if(commit&&next){
-        // Apple-style: base 380ms, reduce by how far already dragged
         const progress = abs / W();
         const dur = Math.max(200, Math.round(380 * (1 - progress * 0.5)));
-        finalizePage(next,dir,dur);
+        if(next==='__prevMonth__'||next==='__nextMonth__'){
+          // Snap back current page then change month
+          snapBack(dur);
+          setTimeout(()=>{ changeMonth(next==='__nextMonth__'?1:-1); },dur/2);
+        } else {
+          finalizePage(next,dir,dur);
+        }
       } else {
         const snapDur = Math.max(280, Math.round(350 * (abs / W())));
         snapBack(Math.min(snapDur, 350));
       }
     } else {
-      const dy=e.changedTouches[0].clientY-startY;
-      if((currentPage==='dashboard'||currentPage==='history')&&window.scrollY<50&&Math.abs(dy)>60){
-        if(dy<0)changeMonth(1);else changeMonth(-1);
-      }
       reset();
     }
   },{passive:true});
