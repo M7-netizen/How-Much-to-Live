@@ -71,7 +71,7 @@
   #month-bar-el.hidden{opacity:0;pointer-events:none;}
 
   /* PAGES */
-  .pages-container{position:relative;overflow:hidden;min-height:0;}
+  .pages-container{position:relative;overflow-x:hidden;}
   .page{
     display:none;
     width:100%;
@@ -2201,13 +2201,15 @@ function toast(msg){
 (function(){
   var sx=0, sy=0, ox=0, vx=0, lx=0, lt=0;
   var axis=null;
-  var side=null;
-  var domReady=false;  // true once we've set up the drag DOM
+  var side=null;       // target neighbour id, 'MONTH_PREV', 'MONTH_NEXT', or null
+  var fingerLeft=null; // true=finger went left (ox<0), locked at axis-lock time
+  var domReady=false;
   var busy=false;
   var active=false;
   var THRESH=0.25, VTHRESH=0.4;
 
   function W(){ return window.innerWidth; }
+  function isMonth(s){ return s==='MONTH_PREV'||s==='MONTH_NEXT'; }
 
   function getNeighbours(){
     var t=new Date(), atNow=(curY===t.getFullYear()&&curM===t.getMonth()+1);
@@ -2218,75 +2220,62 @@ function toast(msg){
     return { L:i<PAGE_ORDER.length-1?PAGE_ORDER[i+1]:null, R:i>0?PAGE_ORDER[i-1]:null };
   }
 
-  function isMonthSide(s){ return s==='MONTH_PREV'||s==='MONTH_NEXT'; }
-
-  // Set up DOM for dragging (only for real page transitions, not month)
+  // Set up absolute positioning for real page drag (called once after axis lock)
   function setupDragDOM(){
-    if(domReady||isMonthSide(side)) return;
+    if(domReady||isMonth(side)) return;
     var curEl=document.getElementById('page-'+currentPage);
-    var nEl=document.getElementById('page-'+side);
+    var nEl  =document.getElementById('page-'+side);
     var h=curEl.offsetHeight;
     document.getElementById('pages-container').style.height=h+'px';
-    // fingerLeft = ox<0 (finger moved left to reveal right neighbour)
-    var fingerLeft=ox<0;
-    curEl.style.position='absolute';
-    curEl.style.top='0'; curEl.style.left='0'; curEl.style.width='100%';
+    curEl.style.cssText='position:absolute;top:0;left:0;width:100%;transform:translateX(0)';
+    // neighbour goes on right if finger went left, left if finger went right
     nEl.style.cssText='display:block;position:absolute;top:0;left:0;width:100%;'
-      +'transform:translateX('+(fingerLeft?W():-W())+'px)';
+      +'transform:translateX('+(fingerLeft ? W() : -W())+'px)';
     nEl.offsetHeight; // force reflow
     domReady=true;
   }
 
-  function teardownDragDOM(){
-    if(!domReady) return;
-    var curEl=document.getElementById('page-'+currentPage);
-    curEl.removeAttribute('style'); curEl.classList.add('active');
-    if(side && !isMonthSide(side)){
-      var nEl=document.getElementById('page-'+side);
-      nEl.removeAttribute('style'); nEl.style.display='none';
-    }
-    document.getElementById('pages-container').style.height='';
-    domReady=false;
-  }
-
   function applyDrag(){
-    if(isMonthSide(side)){
-      // rubber-band only, no DOM layout changes
-      document.getElementById('page-'+currentPage).style.transform='translateX('+(ox*0.2)+'px)';
+    var curEl=document.getElementById('page-'+currentPage);
+    if(isMonth(side)){
+      curEl.style.transform='translateX('+(ox*0.18)+'px)';
       return;
     }
     if(!domReady) return;
-    var curEl=document.getElementById('page-'+currentPage);
     var nEl=document.getElementById('page-'+side);
-    var fingerLeft=ox<0;
-    var start=fingerLeft?W():-W();
+    var nStart=fingerLeft ? W() : -W();
     curEl.style.transform='translateX('+ox+'px)';
-    nEl.style.transform='translateX('+(start+ox)+'px)';
+    nEl.style.transform='translateX('+(nStart+ox)+'px)';
   }
 
-  function goPage(target, fingerLeft, dur){
+  function finishNav(target, dur){
     var ease='cubic-bezier(0.4,0,0.2,1)';
     var curEl=document.getElementById('page-'+currentPage);
-    var nEl=document.getElementById('page-'+target);
+    var nEl  =document.getElementById('page-'+target);
     curEl.style.transition='transform '+dur+'ms '+ease;
-    curEl.style.transform='translateX('+(fingerLeft?-W():W())+'px)';
-    nEl.style.transition='transform '+dur+'ms '+ease;
-    nEl.style.transform='translateX(0)';
+    curEl.style.transform ='translateX('+(fingerLeft?-W():W())+'px)';
+    nEl.style.transition  ='transform '+dur+'ms '+ease;
+    nEl.style.transform   ='translateX(0)';
     setTimeout(function(){
-      curEl.removeAttribute('style'); curEl.classList.remove('active'); curEl.style.display='none';
-      nEl.removeAttribute('style'); nEl.classList.add('active');
+      // Full cleanup
+      curEl.removeAttribute('style');
+      curEl.classList.remove('active');
+      curEl.style.display='none';
+      nEl.removeAttribute('style');
+      nEl.classList.add('active');
       document.getElementById('pages-container').style.height='';
+      // Update state
       currentPage=target;
       document.querySelectorAll('.nav-btn').forEach(function(b,i){
-        b.classList.toggle('active',PAGE_ORDER[i]===currentPage);
+        b.classList.toggle('active', PAGE_ORDER[i]===currentPage);
       });
-      document.getElementById('month-bar-el').classList.toggle('hidden',currentPage==='settings');
-      if(currentPage==='entry') buildEntry();
-      if(currentPage==='income') buildIncomeEntry();
-      if(currentPage==='history') renderHist();
+      document.getElementById('month-bar-el').classList.toggle('hidden', currentPage==='settings');
+      if(currentPage==='entry')    buildEntry();
+      if(currentPage==='income')   buildIncomeEntry();
+      if(currentPage==='history')  renderHist();
       if(currentPage==='settings') setTimeout(function(){renderSettings();},50);
       reset(); busy=false;
-    },dur);
+    }, dur);
   }
 
   function snapBack(dur, cb){
@@ -2294,35 +2283,36 @@ function toast(msg){
     var curEl=document.getElementById('page-'+currentPage);
     curEl.style.transition='transform '+dur+'ms '+ease;
     curEl.style.transform='translateX(0)';
-    if(domReady && side && !isMonthSide(side)){
-      var fingerLeft=ox<0;
+    if(domReady && side && !isMonth(side)){
       var nEl=document.getElementById('page-'+side);
       nEl.style.transition='transform '+dur+'ms '+ease;
       nEl.style.transform='translateX('+(fingerLeft?W():-W())+'px)';
-      setTimeout(function(){ nEl.removeAttribute('style'); nEl.style.display='none'; },dur);
+      setTimeout(function(){ nEl.removeAttribute('style'); nEl.style.display='none'; }, dur);
     }
     setTimeout(function(){
-      curEl.removeAttribute('style'); curEl.classList.add('active');
+      curEl.removeAttribute('style');
+      curEl.classList.add('active');
       document.getElementById('pages-container').style.height='';
       reset(); busy=false;
       if(cb) cb();
-    },dur);
+    }, dur);
   }
 
   function reset(){
-    active=false; axis=null; ox=0; vx=0; side=null; domReady=false;
+    active=false; axis=null; ox=0; vx=0;
+    side=null; fingerLeft=null; domReady=false;
   }
 
   // ── TOUCH START ──
-  document.addEventListener('touchstart',function(e){
+  document.addEventListener('touchstart', function(e){
     if(busy) return;
     if(e.target.closest('input,select,textarea,button,.myr-box,.settings-cat-body,.modal-overlay,#cat-detail-overlay,#edit-overlay,.amount-row')) return;
     sx=lx=e.touches[0].clientX; sy=e.touches[0].clientY;
-    lt=Date.now(); ox=0; vx=0; axis=null; side=null; domReady=false; active=true;
+    lt=Date.now(); ox=0; vx=0; axis=null; side=null; fingerLeft=null; domReady=false; active=true;
   },{passive:true});
 
   // ── TOUCH MOVE ──
-  document.addEventListener('touchmove',function(e){
+  document.addEventListener('touchmove', function(e){
     if(!active||busy) return;
     var x=e.touches[0].clientX, y=e.touches[0].clientY;
     var now=Date.now(), dt=Math.max(now-lt,1);
@@ -2333,9 +2323,12 @@ function toast(msg){
       if(Math.abs(dx)<6&&Math.abs(dy)<6) return;
       axis=Math.abs(dx)>Math.abs(dy)?'h':'v';
       if(axis==='h'){
+        // Lock finger direction and target neighbour NOW — never changes again
+        fingerLeft = dx<0;
         var nb=getNeighbours();
-        side=dx>0?nb.R:nb.L;
+        side = fingerLeft ? nb.L : nb.R;
         if(!side){ active=false; return; }
+        if(!isMonth(side)) setupDragDOM();
       }
     }
 
@@ -2343,37 +2336,35 @@ function toast(msg){
       if(e.target.closest('input,select,textarea,.amount-row,.myr-box')){ active=false; return; }
       e.preventDefault();
       ox=dx;
-      // Setup DOM once we have a real offset
-      if(!isMonthSide(side) && !domReady) setupDragDOM();
       applyDrag();
     }
   },{passive:false});
 
   // ── TOUCH END ──
-  document.addEventListener('touchend',function(e){
+  document.addEventListener('touchend', function(e){
     if(!active) return;
     if(axis==='h'){
-      var abs=Math.abs(ox);
+      var abs  =Math.abs(ox);
       var commit=abs>W()*THRESH||(Math.abs(vx)>VTHRESH&&abs>15);
-      var dur=Math.max(200,Math.round(320*(1-abs/W()*0.4)));
+      var dur  =Math.max(200, Math.round(320*(1-abs/W()*0.4)));
       busy=true;
 
-      if(isMonthSide(side)){
-        var delta=side==='MONTH_PREV'?-1:1;
-        // snap rubber-band back
-        var curEl=document.getElementById('page-'+currentPage);
+      if(isMonth(side)){
+        // Snap rubber-band back, then optionally change month
+        var delta = side==='MONTH_PREV' ? -1 : 1;
+        var curEl = document.getElementById('page-'+currentPage);
         curEl.style.transition='transform 160ms cubic-bezier(0.25,0.46,0.45,0.94)';
         curEl.style.transform='translateX(0)';
         setTimeout(function(){
           curEl.removeAttribute('style');
-          // .active class already on this element, no need to re-add
+          // page-dashboard still has .active class, just clear the inline style
           reset(); busy=false;
           if(commit) changeMonth(delta);
-        },160);
+        }, 160);
       } else if(commit && side){
-        goPage(side, ox<0, dur);
+        finishNav(side, dur);
       } else {
-        snapBack(Math.min(Math.max(180,Math.round(260*(abs/W()))),280));
+        snapBack(Math.min(Math.max(180, Math.round(260*(abs/W()))), 280));
       }
     } else {
       active=false;
