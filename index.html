@@ -2269,25 +2269,28 @@ function toast(msg){
     nextEl.style.transition=`transform ${dur}ms ${ease}`;
     nextEl.style.transform='translateX(0)';
     setTimeout(()=>{
-      log(`finalizePage DONE: now=${next} isAnim=${isAnimating} busy=${swipeBusy}`);
-      curEl.removeAttribute('style');curEl.classList.remove('active');curEl.style.display='none';
-      nextEl.removeAttribute('style');nextEl.classList.add('active');
-      document.getElementById('pages-container').style.height='';
-      currentPage=next;
-      document.querySelectorAll('.nav-btn').forEach((b,i)=>{
-        b.classList.toggle('active',PAGE_ORDER[i]===currentPage);
-      });
-      document.getElementById('month-bar-el').classList.toggle('hidden',currentPage==='settings');
-      // Release lock BEFORE render calls
+      log('A:done');
+      try{curEl.removeAttribute('style');curEl.classList.remove('active');curEl.style.display='none';}catch(e){log('A1:'+e.message);}
+      log('B');
+      try{nextEl.removeAttribute('style');nextEl.classList.add('active');}catch(e){log('B1:'+e.message);}
+      log('C');
+      try{document.getElementById('pages-container').style.height='';}catch(e){log('C1:'+e.message);}
+      log('D');
+      try{currentPage=next;}catch(e){log('D1:'+e.message);}
+      log('E:'+currentPage);
+      try{document.querySelectorAll('.nav-btn').forEach((b,i)=>{b.classList.toggle('active',PAGE_ORDER[i]===currentPage);});}catch(e){log('E1:'+e.message);}
+      log('F');
+      try{document.getElementById('month-bar-el').classList.toggle('hidden',currentPage==='settings');}catch(e){log('F1:'+e.message);}
+      log('G');
       dragging=false;lockDir=null;lockedDir=null;dragOffset=0;velocity=0;
       swipeBusy=false;
-      log(`READY: page=${currentPage} isAnim=${isAnimating} busy=${swipeBusy}`);
+      log('READY busy='+swipeBusy);
       try{
         if(currentPage==='entry')buildEntry();
         if(currentPage==='income')buildIncomeEntry();
         if(currentPage==='history')renderHist();
         if(currentPage==='settings')setTimeout(()=>renderSettings(),50);
-      }catch(err){log('render err: '+err.message);}
+      }catch(err){log('render:'+err.message);}
     },dur);
   }
 
