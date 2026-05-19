@@ -1,4 +1,4 @@
-<!-- build:20260519065358193067 -->
+<!-- build:20260519084719048487 -->
 <!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="活着要多少钱">
 <meta name="theme-color" content="#0f0f0b">
 <link rel="manifest" href="manifest.json">
-<link rel="apple-touch-icon" href="icon.svg">
+<link rel="apple-touch-icon" href="icon-192.png">
 <title>活着要多少钱</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Noto+Sans+SC:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -415,7 +415,7 @@
 <header>
   <div class="header-top">
     <div class="logo-wrap">
-      <div class="logo-box">帐</div>
+      <img src="icon-192.png" alt="logo" style="width:32px;height:32px;border-radius:8px;object-fit:cover;flex-shrink:0;">
       <span class="logo-text">活着要多少钱</span>
     </div>
   </div>
@@ -2130,49 +2130,140 @@ function toast(msg){
 }
 
 
-// ── SWIPE GESTURES ──
+// ── SWIPE GESTURES (drag-follow) ──
 (function(){
-  // PAGE_ORDER is defined globally
-  let touchStartX = 0, touchStartY = 0, touchStartTime = 0;
+  let startX=0,startY=0,lastX=0,lastTime=0,velocity=0;
+  let dragging=false,lockDir=null,dragOffset=0;
+  const THRESHOLD=0.35,VEL_THRESHOLD=0.4;
 
-  document.addEventListener('touchstart', e => {
-    touchStartX = e.touches[0].clientX;
-    touchStartY = e.touches[0].clientY;
-    touchStartTime = Date.now();
-  }, {passive: true});
+  function W(){return window.innerWidth;}
+  function getSibling(dir){
+    const idx=PAGE_ORDER.indexOf(currentPage);
+    if(dir==='left'&&idx<PAGE_ORDER.length-1)return PAGE_ORDER[idx+1];
+    if(dir==='right'&&idx>0)return PAGE_ORDER[idx-1];
+    return null;
+  }
 
-  document.addEventListener('touchend', e => {
-    const dx = e.changedTouches[0].clientX - touchStartX;
-    const dy = e.changedTouches[0].clientY - touchStartY;
-    const dt = Date.now() - touchStartTime;
-    const absDx = Math.abs(dx), absDy = Math.abs(dy);
+  function setupAdjacentPage(dir){
+    const next=getSibling(dir);
+    if(!next)return false;
+    const nextEl=document.getElementById('page-'+next);
+    const curEl=document.getElementById('page-'+currentPage);
+    nextEl.style.cssText=`display:block;position:absolute;top:0;left:0;width:100%;transform:translateX(${dir==='left'?W():-W()}px)`;
+    curEl.style.position='relative';
+    return true;
+  }
 
-    // Only handle fast, clearly horizontal or vertical swipes
-    if(dt > 400) return;
-    if(absDx < 40 && absDy < 40) return;
+  function applyDrag(offset){
+    const curEl=document.getElementById('page-'+currentPage);
+    curEl.style.transform=`translateX(${offset}px)`;
+    const dir=offset<0?'left':'right';
+    const next=getSibling(dir);
+    if(next){
+      const nextEl=document.getElementById('page-'+next);
+      nextEl.style.transform=`translateX(${(dir==='left'?W():-W())+offset}px)`;
+    }
+  }
 
-    // Ignore swipes on interactive elements
-    const target = e.target.closest('input,select,textarea,.myr-box,.cat-grid,.sub-grid,.settings-cat-body,.modal-overlay,#cat-detail-overlay,#edit-overlay');
-    if(target) return;
+  function finalizePage(next,dir,dur){
+    const ease='cubic-bezier(0.25,0.46,0.45,0.94)';
+    const curEl=document.getElementById('page-'+currentPage);
+    const nextEl=document.getElementById('page-'+next);
+    curEl.style.transition=`transform ${dur}ms ${ease}`;
+    curEl.style.transform=`translateX(${dir==='left'?-W():W()}px)`;
+    nextEl.style.transition=`transform ${dur}ms ${ease}`;
+    nextEl.style.transform='translateX(0)';
+    setTimeout(()=>{
+      curEl.style.cssText='';curEl.classList.remove('active');
+      nextEl.style.cssText='';nextEl.classList.add('active');
+      currentPage=next;
+      document.querySelectorAll('.nav-btn').forEach((b,i)=>{
+        b.classList.toggle('active',PAGE_ORDER[i]===currentPage);
+      });
+      document.getElementById('month-bar-el').classList.toggle('hidden',currentPage==='settings');
+      if(currentPage==='entry')buildEntry();
+      if(currentPage==='income')buildIncomeEntry();
+      if(currentPage==='history')renderHist();
+      if(currentPage==='settings')setTimeout(()=>renderSettings(),50);
+      reset();isAnimating=false;
+    },dur);
+  }
 
-    if(absDx > absDy && absDx > 60) {
-      // Horizontal swipe → change page
-      const idx = PAGE_ORDER.indexOf(currentPage);
-      if(dx < 0 && idx < PAGE_ORDER.length-1) showPage(PAGE_ORDER[idx+1], 'left');
-      if(dx > 0 && idx > 0) showPage(PAGE_ORDER[idx-1], 'right');
-    } else if(absDy > absDx && absDy > 60) {
-      // Vertical swipe on dashboard/history → change month
-      if(currentPage === 'dashboard' || currentPage === 'history') {
-        if(window.scrollY < 50) {
-          if(dy < 0) changeMonth(1);
-          if(dy > 0) changeMonth(-1);
+  function snapBack(dur){
+    const ease='cubic-bezier(0.34,1.56,0.64,1)';
+    const dir=dragOffset<0?'left':'right';
+    const curEl=document.getElementById('page-'+currentPage);
+    curEl.style.transition=`transform ${dur}ms ${ease}`;
+    curEl.style.transform='translateX(0)';
+    const next=getSibling(dir);
+    if(next){
+      const nextEl=document.getElementById('page-'+next);
+      nextEl.style.transition=`transform ${dur}ms ${ease}`;
+      nextEl.style.transform=`translateX(${dir==='left'?W():-W()}px)`;
+      setTimeout(()=>{nextEl.style.cssText='';},dur);
+    }
+    setTimeout(()=>{curEl.style.cssText='';curEl.classList.add('active');reset();isAnimating=false;},dur);
+  }
+
+  function reset(){dragging=false;lockDir=null;dragOffset=0;velocity=0;}
+
+  document.addEventListener('touchstart',e=>{
+    if(isAnimating)return;
+    if(e.target.closest('input,select,textarea,button,.myr-box,.settings-cat-body,.modal-overlay,#cat-detail-overlay,#edit-overlay'))return;
+    startX=lastX=e.touches[0].clientX;
+    startY=e.touches[0].clientY;
+    lastTime=Date.now();
+    dragging=true;lockDir=null;dragOffset=0;
+  },{passive:true});
+
+  document.addEventListener('touchmove',e=>{
+    if(!dragging||isAnimating)return;
+    const x=e.touches[0].clientX,y=e.touches[0].clientY;
+    const now=Date.now(),dt=Math.max(now-lastTime,1);
+    velocity=(x-lastX)/dt;lastX=x;lastTime=now;
+    const dx=x-startX,dy=y-startY;
+
+    if(!lockDir){
+      if(Math.abs(dx)>8||Math.abs(dy)>8){
+        lockDir=Math.abs(dx)>Math.abs(dy)?'h':'v';
+        if(lockDir==='h'){
+          const dir=dx<0?'left':'right';
+          if(!setupAdjacentPage(dir)){dragging=false;return;}
         }
       }
+      return;
     }
-  }, {passive: true});
-})();
+    if(lockDir==='h'){
+      e.preventDefault();
+      const dir=dx<0?'left':'right';
+      dragOffset=getSibling(dir)?dx:dx*0.12;
+      applyDrag(dragOffset);
+    }
+  },{passive:false});
 
-// ── START ──
+  document.addEventListener('touchend',e=>{
+    if(!dragging)return;
+    if(lockDir==='h'){
+      const dir=dragOffset<0?'left':'right';
+      const abs=Math.abs(dragOffset),absV=Math.abs(velocity);
+      const commit=abs>W()*THRESHOLD||(absV>VEL_THRESHOLD&&abs>30);
+      const next=getSibling(dir);
+      isAnimating=true;
+      if(commit&&next){
+        const dur=Math.max(140,Math.min(300,(W()-abs)/Math.max(absV*1000,0.8)));
+        finalizePage(next,dir,dur);
+      } else {
+        snapBack(Math.max(200,Math.min(320,abs/Math.max(absV*1000,0.5))));
+      }
+    } else {
+      const dy=e.changedTouches[0].clientY-startY;
+      if((currentPage==='dashboard'||currentPage==='history')&&window.scrollY<50&&Math.abs(dy)>60){
+        if(dy<0)changeMonth(1);else changeMonth(-1);
+      }
+      reset();
+    }
+  },{passive:true});
+})();// ── START ──
 updateMonthLabel();
 init();
 document.getElementById('income-amt-input').addEventListener('input', updIncomeBtn);
