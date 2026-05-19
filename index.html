@@ -48,23 +48,20 @@
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 
   /* HEADER */
-  header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px 14px;
+  header{padding:10px 16px;
     border-bottom:1px solid var(--border);position:sticky;top:0;
     background:rgba(15,15,11,0.93);backdrop-filter:blur(14px);z-index:50;}
-  .logo-wrap{display:flex;align-items:center;gap:10px;}
-  .logo-box{width:34px;height:34px;border-radius:8px;background:var(--gold);color:#0f0f0b;
-    display:flex;align-items:center;justify-content:center;font-size:16px;font-family:var(--font-serif);font-weight:700;}
-  .logo-text{font-size:18px;font-family:var(--font-serif);letter-spacing:.04em;}
-  nav{display:flex;gap:5px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding-bottom:2px;}
+  nav{display:flex;gap:6px;width:100%;}
   nav::-webkit-scrollbar{display:none;}
   .nav-btn{background:transparent;border:1px solid var(--border);color:var(--text-dim);border-radius:20px;
-    padding:5px 13px;font-size:12px;font-family:var(--font-sans);cursor:pointer;transition:all .18s;}
+    padding:7px 0;font-size:13px;font-family:var(--font-sans);cursor:pointer;transition:all .18s;
+    flex:1;text-align:center;}
   .nav-btn:hover{border-color:var(--gold);color:var(--gold);}
   .nav-btn.active{background:var(--gold);border-color:var(--gold);color:#0f0f0b;font-weight:600;}
 
   /* MONTH BAR */
   .month-bar{display:flex;align-items:center;justify-content:center;gap:18px;padding:14px 0 6px;
-    position:sticky;top:105px;background:rgba(15,15,11,0.9);backdrop-filter:blur(10px);z-index:40;}
+    position:sticky;top:54px;background:rgba(15,15,11,0.9);backdrop-filter:blur(10px);z-index:40;}
   .month-arrow{background:transparent;border:1px solid var(--border);color:var(--text);
     width:30px;height:30px;border-radius:50%;font-size:18px;cursor:pointer;
     display:flex;align-items:center;justify-content:center;transition:border-color .15s;}
@@ -453,9 +450,6 @@
 </div>
 
 <header>
-  <div class="header-top">
-    <img src="header-logo.png" alt="活着要多少钱" style="height:44px;width:auto;object-fit:contain;flex-shrink:0;">
-  </div>
   <nav>
     <button class="nav-btn active" onclick="showPage('dashboard')">总览</button>
     <button class="nav-btn" onclick="showPage('entry')">支出</button>
@@ -2207,170 +2201,178 @@ function toast(msg){
 (function(){
   let startX=0,startY=0,lastX=0,lastTime=0,velocity=0;
   let dragging=false,lockDir=null,dragOffset=0;
-  const THRESHOLD=0.25,VEL_THRESHOLD=0.25;
+  let monthSwipe=false; // true when swiping to change month on dashboard
+  const THRESHOLD=0.25, VEL_THRESHOLD=0.25;
 
-  function W(){return window.innerWidth;}
-  const todayY=new Date().getFullYear(), todayM=new Date().getMonth()+1;
-  function isCurrentMonth(){ return curY===todayY && curM===todayM; }
+  function W(){ return window.innerWidth; }
 
-  function getSibling(dir){
-    // On dashboard: swipe handles months first, then page nav
-    if(currentPage==='dashboard'){
-      if(dir==='right'){
-        // right swipe = go to previous month (always possible)
-        return '__prevMonth__';
-      }
-      if(dir==='left'){
-        if(!isCurrentMonth()){
-          // not current month yet → go forward in time (next month)
-          return '__nextMonth__';
-        }
-        // already at current month → go to entry page
-        return 'entry';
-      }
-    }
+  // Is curM/curY the real current month?
+  function isCurrentMonth(){
+    const n=new Date();
+    return curY===n.getFullYear() && curM===n.getMonth()+1;
+  }
+
+  // Returns the page name to navigate to, or null (month swipes handled separately)
+  function getPageSibling(dir){
     const idx=PAGE_ORDER.indexOf(currentPage);
-    if(dir==='left'&&idx<PAGE_ORDER.length-1)return PAGE_ORDER[idx+1];
-    if(dir==='right'&&idx>0)return PAGE_ORDER[idx-1];
+    if(dir==='left'  && idx < PAGE_ORDER.length-1) return PAGE_ORDER[idx+1];
+    if(dir==='right' && idx > 0)                   return PAGE_ORDER[idx-1];
     return null;
   }
 
-  function setupAdjacentPage(dir){
-    const next=getSibling(dir);
-    if(!next)return false;
-    // Month sentinels: just preview the same dashboard page shifted
-    if(next==='__prevMonth__'||next==='__nextMonth__'){
-      const curEl=document.getElementById('page-dashboard');
-      const container=document.getElementById('pages-container');
-      container.style.height=curEl.offsetHeight+'px';
-      curEl.style.cssText=`position:absolute;top:0;left:0;width:100%;`;
+  // On dashboard: right = prev month, left = next month (or entry if already current)
+  function getDashboardSwipe(dir){
+    if(currentPage !== 'dashboard') return null;
+    if(dir==='right') return 'prevMonth';
+    if(dir==='left'){
+      if(!isCurrentMonth()) return 'nextMonth';
+      return null; // fall through to page nav (→ entry)
+    }
+    return null;
+  }
+
+  function setupPage(dir){
+    const mSwipe = getDashboardSwipe(dir);
+    if(mSwipe){
+      // Month swipe: just lock current page in place, no second page needed
+      monthSwipe = true;
+      const curEl = document.getElementById('page-dashboard');
+      const container = document.getElementById('pages-container');
+      container.style.height = curEl.offsetHeight + 'px';
+      curEl.style.cssText = 'position:absolute;top:0;left:0;width:100%;';
       return true;
     }
-    const nextEl=document.getElementById('page-'+next);
-    const curEl=document.getElementById('page-'+currentPage);
-    const container=document.getElementById('pages-container');
-    const h=curEl.offsetHeight;
-    container.style.height=h+'px';
-    nextEl.style.cssText=`display:block;position:absolute;top:0;left:0;width:100%;transform:translateX(${dir==='left'?W():-W()}px)`;
-    curEl.style.cssText=`position:absolute;top:0;left:0;width:100%;`;
+    monthSwipe = false;
+    const next = getPageSibling(dir);
+    if(!next) return false;
+    const curEl  = document.getElementById('page-'+currentPage);
+    const nextEl = document.getElementById('page-'+next);
+    const container = document.getElementById('pages-container');
+    container.style.height = curEl.offsetHeight + 'px';
+    nextEl.style.cssText = `display:block;position:absolute;top:0;left:0;width:100%;transform:translateX(${dir==='left'?W():-W()}px)`;
+    curEl.style.cssText  = 'position:absolute;top:0;left:0;width:100%;';
     return true;
   }
 
   function applyDrag(offset){
-    const curEl=document.getElementById('page-'+currentPage);
-    curEl.style.transform=`translateX(${offset}px)`;
-    const dir=offset<0?'left':'right';
-    const next=getSibling(dir);
-    if(next && next!=='__prevMonth__' && next!=='__nextMonth__'){
-      const nextEl=document.getElementById('page-'+next);
-      nextEl.style.transform=`translateX(${(dir==='left'?W():-W())+offset}px)`;
+    const curEl = document.getElementById('page-'+currentPage);
+    curEl.style.transform = `translateX(${offset}px)`;
+    if(!monthSwipe){
+      const dir  = offset < 0 ? 'left' : 'right';
+      const next = getPageSibling(dir);
+      if(next){
+        document.getElementById('page-'+next).style.transform =
+          `translateX(${(dir==='left'?W():-W())+offset}px)`;
+      }
     }
   }
 
-  function finalizePage(next,dir,dur){
-    const ease='cubic-bezier(0.4,0,0.2,1)';
-    const curEl=document.getElementById('page-'+currentPage);
-    const nextEl=document.getElementById('page-'+next);
-    curEl.style.transition=`transform ${dur}ms ${ease}`;
-    curEl.style.transform=`translateX(${dir==='left'?-W():W()}px)`;
-    nextEl.style.transition=`transform ${dur}ms ${ease}`;
-    nextEl.style.transform='translateX(0)';
+  function finalizePage(next, dir, dur){
+    const ease  = 'cubic-bezier(0.4,0,0.2,1)';
+    const curEl = document.getElementById('page-'+currentPage);
+    const nextEl= document.getElementById('page-'+next);
+    curEl.style.transition  = `transform ${dur}ms ${ease}`;
+    curEl.style.transform   = `translateX(${dir==='left'?-W():W()}px)`;
+    nextEl.style.transition = `transform ${dur}ms ${ease}`;
+    nextEl.style.transform  = 'translateX(0)';
     setTimeout(()=>{
-      // Clean reset - remove ALL inline styles to restore normal flow
-      curEl.removeAttribute('style');curEl.classList.remove('active');curEl.style.display='none';
-      nextEl.removeAttribute('style');nextEl.classList.add('active');
-      currentPage=next;
+      curEl.removeAttribute('style'); curEl.classList.remove('active'); curEl.style.display='none';
+      nextEl.removeAttribute('style'); nextEl.classList.add('active');
+      currentPage = next;
       document.querySelectorAll('.nav-btn').forEach((b,i)=>{
-        b.classList.toggle('active',PAGE_ORDER[i]===currentPage);
+        b.classList.toggle('active', PAGE_ORDER[i]===currentPage);
       });
-      document.getElementById('month-bar-el').classList.toggle('hidden',currentPage==='settings');
-      if(currentPage==='entry')buildEntry();
-      if(currentPage==='income')buildIncomeEntry();
-      if(currentPage==='history')renderHist();
-      if(currentPage==='settings')setTimeout(()=>renderSettings(),50);
-      reset();isAnimating=false;
-    },dur);
+      document.getElementById('month-bar-el').classList.toggle('hidden', currentPage==='settings');
+      if(currentPage==='entry')    buildEntry();
+      if(currentPage==='income')   buildIncomeEntry();
+      if(currentPage==='history')  renderHist();
+      if(currentPage==='settings') setTimeout(()=>renderSettings(),50);
+      reset(); isAnimating=false;
+    }, dur);
   }
 
   function snapBack(dur){
-    const ease='cubic-bezier(0.25,0.46,0.45,0.94)';
-    const dir=dragOffset<0?'left':'right';
-    const curEl=document.getElementById('page-'+currentPage);
-    curEl.style.transition=`transform ${dur}ms ${ease}`;
-    curEl.style.transform='translateX(0)';
-    const next=getSibling(dir);
-    if(next){
-      const nextEl=document.getElementById('page-'+next);
-      nextEl.style.transition=`transform ${dur}ms ${ease}`;
-      nextEl.style.transform=`translateX(${dir==='left'?W():-W()}px)`;
-      setTimeout(()=>{nextEl.removeAttribute('style');nextEl.style.display='none';},dur);
+    const ease  = 'cubic-bezier(0.25,0.46,0.45,0.94)';
+    const dir   = dragOffset < 0 ? 'left' : 'right';
+    const curEl = document.getElementById('page-'+currentPage);
+    curEl.style.transition = `transform ${dur}ms ${ease}`;
+    curEl.style.transform  = 'translateX(0)';
+    if(!monthSwipe){
+      const next = getPageSibling(dir);
+      if(next){
+        const nextEl = document.getElementById('page-'+next);
+        nextEl.style.transition = `transform ${dur}ms ${ease}`;
+        nextEl.style.transform  = `translateX(${dir==='left'?W():-W()}px)`;
+        setTimeout(()=>{ nextEl.removeAttribute('style'); nextEl.style.display='none'; }, dur);
+      }
     }
     setTimeout(()=>{
-      document.getElementById('pages-container').style.height='';
-      curEl.removeAttribute('style');curEl.classList.add('active');
-      reset();isAnimating=false;
-    },dur);
+      document.getElementById('pages-container').style.height = '';
+      curEl.removeAttribute('style'); curEl.classList.add('active');
+      reset(); isAnimating=false;
+    }, dur);
   }
 
-  function reset(){dragging=false;lockDir=null;dragOffset=0;velocity=0;}
+  function reset(){ dragging=false; lockDir=null; dragOffset=0; velocity=0; monthSwipe=false; }
 
-  document.addEventListener('touchstart',e=>{
-    if(isAnimating)return;
-    if(e.target.closest('input,select,textarea,button,.myr-box,.settings-cat-body,.modal-overlay,#cat-detail-overlay,#edit-overlay,.amount-row,#amt-input,#income-amt-input'))return;
+  document.addEventListener('touchstart', e=>{
+    if(isAnimating) return;
+    if(e.target.closest('input,select,textarea,button,.myr-box,.settings-cat-body,.modal-overlay,#cat-detail-overlay,#edit-overlay,.amount-row')) return;
     startX=lastX=e.touches[0].clientX;
     startY=e.touches[0].clientY;
     lastTime=Date.now();
-    dragging=true;lockDir=null;dragOffset=0;
+    dragging=true; lockDir=null; dragOffset=0;
   },{passive:true});
 
-  document.addEventListener('touchmove',e=>{
-    if(!dragging||isAnimating)return;
-    const x=e.touches[0].clientX,y=e.touches[0].clientY;
-    const now=Date.now(),dt=Math.max(now-lastTime,1);
-    velocity=(x-lastX)/dt;lastX=x;lastTime=now;
-    const dx=x-startX,dy=y-startY;
+  document.addEventListener('touchmove', e=>{
+    if(!dragging||isAnimating) return;
+    const x=e.touches[0].clientX, y=e.touches[0].clientY;
+    const now=Date.now(), dt=Math.max(now-lastTime,1);
+    velocity=(x-lastX)/dt; lastX=x; lastTime=now;
+    const dx=x-startX, dy=y-startY;
 
     if(!lockDir){
       if(Math.abs(dx)>5||Math.abs(dy)>5){
-        lockDir=Math.abs(dx)>Math.abs(dy)?'h':'v';
+        lockDir = Math.abs(dx)>Math.abs(dy) ? 'h' : 'v';
         if(lockDir==='h'){
-          const dir=dx<0?'left':'right';
-          if(!setupAdjacentPage(dir)){dragging=false;return;}
+          const dir = dx<0?'left':'right';
+          if(!setupPage(dir)){ dragging=false; return; }
         }
       }
       return;
     }
     if(lockDir==='h'){
-      // Don't hijack scroll on input elements
-      if(e.target.closest('input,select,textarea,.amount-row,.myr-box')){dragging=false;return;}
+      if(e.target.closest('input,select,textarea,.amount-row,.myr-box')){ dragging=false; return; }
       e.preventDefault();
-      const dir=dx<0?'left':'right';
-      dragOffset=getSibling(dir)?dx:dx*0.12;
+      const dir = dx<0?'left':'right';
+      // rubber-band if no target
+      const hasTarget = monthSwipe || !!getPageSibling(dir);
+      dragOffset = hasTarget ? dx : dx*0.12;
       applyDrag(dragOffset);
     }
   },{passive:false});
 
-  document.addEventListener('touchend',e=>{
-    if(!dragging)return;
+  document.addEventListener('touchend', e=>{
+    if(!dragging) return;
     if(lockDir==='h'){
-      const dir=dragOffset<0?'left':'right';
-      const abs=Math.abs(dragOffset),absV=Math.abs(velocity);
-      const commit=abs>W()*THRESHOLD||(absV>VEL_THRESHOLD&&abs>15);
-      const next=getSibling(dir);
-      isAnimating=true;
-      if(commit&&next){
-        const progress = abs / W();
-        const dur = Math.max(200, Math.round(380 * (1 - progress * 0.5)));
-        if(next==='__prevMonth__'||next==='__nextMonth__'){
-          // Snap back current page then change month
-          snapBack(dur);
-          setTimeout(()=>{ changeMonth(next==='__nextMonth__'?1:-1); },dur/2);
-        } else {
-          finalizePage(next,dir,dur);
-        }
+      const dir  = dragOffset<0?'left':'right';
+      const abs  = Math.abs(dragOffset);
+      const absV = Math.abs(velocity);
+      const commit = abs>W()*THRESHOLD || (absV>VEL_THRESHOLD && abs>15);
+      const progress = abs/W();
+      const dur = Math.max(200, Math.round(380*(1-progress*0.5)));
+      isAnimating = true;
+
+      if(commit && monthSwipe){
+        // Snap back page visually, then change month
+        snapBack(dur);
+        setTimeout(()=>{ changeMonth(dir==='right'?-1:1); }, dur/2);
+      } else if(commit && !monthSwipe){
+        const next = getPageSibling(dir);
+        if(next){ finalizePage(next, dir, dur); }
+        else { snapBack(Math.min(dur,350)); }
       } else {
-        const snapDur = Math.max(280, Math.round(350 * (abs / W())));
-        snapBack(Math.min(snapDur, 350));
+        snapBack(Math.min(Math.max(280, Math.round(350*(abs/W()))), 350));
       }
     } else {
       reset();
