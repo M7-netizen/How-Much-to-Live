@@ -2199,7 +2199,6 @@ function toast(msg){
   var sx=0, sy=0, dx=0, vx=0, lx=0, lt=0;
   var axis=null, lockedDir=null, side=null;
   var active=false;
-  var baseOffset=0; // strip offset at touchstart (%)
   var THRESH=0.28, VTHRESH=0.3;
 
   function W(){ return window.innerWidth; }
@@ -2217,21 +2216,11 @@ function toast(msg){
     };
   }
 
-  function getStripPct(){
-    var strip = document.getElementById('page-strip');
-    var t = strip.style.transform;
-    if(!t || t==='none') return getStripOffset(currentPage);
-    var m = t.match(/translateX\(([-\d.]+)%\)/);
-    return m ? parseFloat(m[1]) : getStripOffset(currentPage);
-  }
-
   document.addEventListener('touchstart', function(e){
     if(isAnimating) return;
     if(e.target.closest('input,select,textarea,button,.myr-box,.settings-cat-body,.modal-overlay,#cat-detail-overlay,#edit-overlay,.amount-row')) return;
     sx=lx=e.touches[0].clientX; sy=e.touches[0].clientY;
-    lt=Date.now(); dx=0; vx=0; axis=null; lockedDir=null; side=null;
-    baseOffset = getStripPct();
-    active=true;
+    lt=Date.now(); dx=0; vx=0; axis=null; lockedDir=null; side=null; active=true;
   }, {passive:true});
 
   document.addEventListener('touchmove', function(e){
@@ -2250,33 +2239,12 @@ function toast(msg){
         var nb=getNeighbours();
         side = lockedDir==='left' ? nb.L : nb.R;
         if(!side){ active=false; return; }
-        // Pre-render target if it's a real page
-        if(!isMonth(side)){
-          if(side==='entry')    buildEntry();
-          if(side==='income')   buildIncomeEntry();
-          if(side==='history')  renderHist();
-          if(side==='settings') renderSettings();
-        }
       }
     }
 
     if(axis==='h'){
       if(e.target.closest('input,select,textarea,.amount-row,.myr-box')){ active=false; return; }
       e.preventDefault();
-
-      if(!isMonth(side)){
-        // Move strip with finger - convert px to %
-        var pct = baseOffset + (dx / W()) * 100;
-        // Clamp between current and target page offset
-        var targetOff = getStripOffset(side);
-        var curOff    = getStripOffset(currentPage);
-        var minOff = Math.min(curOff, targetOff);
-        var maxOff = Math.max(curOff, targetOff);
-        pct = Math.max(minOff, Math.min(maxOff, pct));
-        var strip = document.getElementById('page-strip');
-        strip.style.transition = 'none';
-        strip.style.transform  = 'translateX('+pct+'%)';
-      }
     }
   }, {passive:false});
 
@@ -2286,26 +2254,11 @@ function toast(msg){
     if(axis==='h' && side){
       var abs=Math.abs(dx);
       var commit = abs>W()*THRESH || (Math.abs(vx)>VTHRESH && abs>15);
-
+      if(!commit) return;
       if(isMonth(side)){
-        if(commit) changeMonth(side==='MONTH_PREV' ? -1 : 1);
-        return;
-      }
-
-      isAnimating = true;
-      if(commit){
-        // Snap to target page
-        setStripPos(getStripOffset(side), true);
-        currentPage = side;
-        document.querySelectorAll('.nav-btn').forEach(function(b,i){
-          b.classList.toggle('active', PAGE_ORDER[i]===currentPage);
-        });
-        document.getElementById('month-bar-el').classList.toggle('hidden', currentPage==='settings');
-        setTimeout(function(){ isAnimating=false; }, STRIP_DUR);
+        changeMonth(side==='MONTH_PREV' ? -1 : 1);
       } else {
-        // Snap back to current page
-        setStripPos(getStripOffset(currentPage), true);
-        setTimeout(function(){ isAnimating=false; }, STRIP_DUR);
+        showPage(side, lockedDir);
       }
     }
   }, {passive:true});
