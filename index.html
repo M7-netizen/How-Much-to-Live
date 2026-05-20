@@ -1007,7 +1007,17 @@ function hideLoading(){
 
   setTimeout(()=>{
     const el = document.getElementById('loading');
-    if(el){ el.classList.add('done'); setTimeout(()=>el.remove(), 700); }
+    if(el){ el.classList.add('done'); setTimeout(()=>{
+      el.remove();
+      // Pre-warm all hidden pages so first navigation has no layout delay
+      document.querySelectorAll('.page:not(.active)').forEach(p=>{
+        p.style.cssText='display:block;visibility:hidden;position:absolute;pointer-events:none;';
+      });
+      document.getElementById('pages-container').offsetHeight; // single reflow
+      document.querySelectorAll('.page:not(.active)').forEach(p=>{
+        p.style.cssText='';
+      });
+    }, 700); }
   }, 420);
 }
 
