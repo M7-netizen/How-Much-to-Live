@@ -84,11 +84,11 @@
   }
   .page.slide-in-left{
     display:block;
-    animation:slideInLeft 0.35s cubic-bezier(0.4,0,0.2,1) forwards;
+    animation:slideInLeft 0.25s cubic-bezier(0.4,0,0.2,1) forwards;
   }
   .page.slide-in-right{
     display:block;
-    animation:slideInRight 0.35s cubic-bezier(0.4,0,0.2,1) forwards;
+    animation:slideInRight 0.25s cubic-bezier(0.4,0,0.2,1) forwards;
   }
   .page.slide-in-up{
     display:block;
@@ -100,11 +100,11 @@
   }
   .page.slide-out-left{
     display:block;
-    animation:slideOutLeft 0.35s cubic-bezier(0.4,0,0.2,1) forwards;
+    animation:slideOutLeft 0.25s cubic-bezier(0.4,0,0.2,1) forwards;
   }
   .page.slide-out-right{
     display:block;
-    animation:slideOutRight 0.35s cubic-bezier(0.4,0,0.2,1) forwards;
+    animation:slideOutRight 0.25s cubic-bezier(0.4,0,0.2,1) forwards;
   }
   .page.slide-out-up{
     display:block;
@@ -1114,14 +1114,14 @@ window.showPage=function(name, direction){
     setTimeout(()=>{
       oldPage.classList.remove(outAnim);
       oldPage.style.display = '';
-    }, 380);
+    }, 270);
   }
 
   setTimeout(()=>{
     newPage.classList.remove(inAnim);
     newPage.classList.add('active');
     isAnimating = false;
-  }, 360);
+  }, 260);
 
   currentPage = name;
   document.querySelectorAll('.nav-btn').forEach((b,i)=>{
