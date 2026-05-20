@@ -1100,6 +1100,12 @@ window.showPage=function(name, direction){
                   direction === 'right' ? 'slide-out-right' :
                   direction === 'up' ? 'slide-out-up' : 'slide-out-down';
 
+  // Pre-render before animation starts so content is ready
+  if(name==='entry')   buildEntry();
+  if(name==='income')  buildIncomeEntry();
+  if(name==='history') renderHist();
+  if(name==='settings') renderSettings();
+
   // Setup new page
   newPage.style.display = 'block';
   newPage.classList.remove('active','slide-in-left','slide-in-right','slide-in-up','slide-in-down');
@@ -1128,10 +1134,7 @@ window.showPage=function(name, direction){
   });
   document.getElementById('month-bar-el').classList.toggle('hidden', name==='settings');
 
-  if(name==='entry') buildEntry();
-  if(name==='income') buildIncomeEntry();
-  if(name==='history') renderHist();
-  if(name==='settings') setTimeout(()=>renderSettings(), 50);
+  // (render already called above before animation)
 };
 
 // ── DASHBOARD ──
