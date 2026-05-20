@@ -1099,19 +1099,13 @@ window.showPage=function(name, direction){
                   direction === 'right' ? 'slide-out-right' :
                   direction === 'up' ? 'slide-out-up' : 'slide-out-down';
 
-  // Start animation immediately - defer ALL renders to next frame
-  newPage.style.display = 'block';
-  newPage.classList.remove('active','slide-in-left','slide-in-right','slide-in-up','slide-in-down');
-  newPage.classList.add(inAnim);
+  // Render content
+  if(name==='entry')    buildEntry();
+  if(name==='income')   buildIncomeEntry();
+  if(name==='history')  renderHist();
+  if(name==='settings') renderSettings();
 
-  // Render content after animation starts
-  requestAnimationFrame(()=>{
-    if(name==='entry')    buildEntry();
-    if(name==='income')   buildIncomeEntry();
-    if(name==='history')  renderHist();
-    if(name==='settings') renderSettings();
-  });
-
+  // Start outgoing animation immediately
   if(oldPage){
     oldPage.classList.remove('active');
     oldPage.classList.add(outAnim);
@@ -1121,11 +1115,19 @@ window.showPage=function(name, direction){
     }, 270);
   }
 
+  // Push incoming animation to next frame — browser finishes layout first
+  requestAnimationFrame(()=>{
+    newPage.style.display = 'block';
+    newPage.classList.remove('active','slide-in-left','slide-in-right','slide-in-up','slide-in-down');
+    newPage.offsetHeight; // force reflow
+    newPage.classList.add(inAnim);
+  });
+
   setTimeout(()=>{
     newPage.classList.remove(inAnim);
     newPage.classList.add('active');
     isAnimating = false;
-  }, 260);
+  }, 280);
 
   currentPage = name;
   document.querySelectorAll('.nav-btn').forEach((b,i)=>{
@@ -2270,6 +2272,24 @@ function toast(msg){
 })();// ── START ──
 updateMonthLabel();
 init();
+
+// Pre-warm all pages so first-time layout doesn't block animation
+requestAnimationFrame(()=>{
+  const pages = document.querySelectorAll('.page');
+  pages.forEach(p=>{
+    if(!p.classList.contains('active')){
+      p.style.cssText = 'display:block;visibility:hidden;position:absolute;pointer-events:none;';
+    }
+  });
+  // Force layout calculation
+  pages.forEach(p=>p.offsetHeight);
+  // Hide them again
+  pages.forEach(p=>{
+    if(!p.classList.contains('active')){
+      p.style.cssText = '';
+    }
+  });
+});
 document.getElementById('income-amt-input').addEventListener('input', updIncomeBtn);
 document.getElementById('income-amt-input').addEventListener('keydown',e=>{if(e.key==='Enter'){document.getElementById('income-note-input').focus();}});
 document.getElementById('income-note-input').addEventListener('keydown',e=>{if(e.key==='Enter'){addIncomeTxn();}});
