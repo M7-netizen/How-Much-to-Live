@@ -71,21 +71,16 @@
   #month-bar-el.hidden{opacity:0;pointer-events:none;}
 
   /* PAGES */
-  .pages-container{
-    position:relative;
-    overflow:hidden;
-  }
-  .page-strip{
-    display:flex;
-    width:500%; /* 5 pages */
-    will-change:transform;
-    transition:none;
-  }
+  .pages-container{position:relative;overflow:hidden;min-height:0;}
   .page{
-    width:20%; /* 1/5 of strip = 1 screen */
-    flex-shrink:0;
+    display:none;
+    width:100%;
+    will-change:transform;
     box-sizing:border-box;
-    min-height:1px;
+  }
+  .page.active{
+    display:block;
+    position:relative;
   }
   .page.slide-in-left{
     display:block;
@@ -471,7 +466,6 @@
 </div>
 
 <div class="wrap">
-<div class="page-strip" id="page-strip">
   <!-- DASHBOARD -->
   <div class="page active" id="page-dashboard">
     <div class="total-card">
@@ -670,7 +664,6 @@
       <button class="modal-confirm" onclick="confirmModal()">确认</button>
     </div>
   </div>
-</div><!-- end page-strip -->
 </div><!-- end pages-container -->
 </div>
 
@@ -1085,48 +1078,56 @@ const PAGE_ORDER = ['dashboard','entry','income','history','settings'];
 let currentPage = 'dashboard';
 let isAnimating = false;
 
-// Strip-based navigation
-const STRIP_DUR = 340; // ms
-const STRIP_EASE = 'cubic-bezier(0.4,0,0.2,1)';
-
-function getStripOffset(name){
-  var i = PAGE_ORDER.indexOf(name);
-  return -(i * 20); // each page = 20% of 500% strip
-}
-
-function setStripPos(pct, animate){
-  var strip = document.getElementById('page-strip');
-  if(animate){
-    strip.style.transition = 'transform '+STRIP_DUR+'ms '+STRIP_EASE;
-  } else {
-    strip.style.transition = 'none';
-  }
-  strip.style.transform = 'translateX('+pct+'%)';
-}
-
 window.showPage=function(name, direction){
   if(name === currentPage) return;
   if(isAnimating) return;
   isAnimating = true;
 
-  // Pre-render before animation
+  const oldPage = document.getElementById('page-'+currentPage);
+  const newPage = document.getElementById('page-'+name);
+
+  if(!direction){
+    const oldIdx = PAGE_ORDER.indexOf(currentPage);
+    const newIdx = PAGE_ORDER.indexOf(name);
+    direction = newIdx > oldIdx ? 'left' : 'right';
+  }
+
+  const inAnim = direction === 'left' ? 'slide-in-left' :
+                 direction === 'right' ? 'slide-in-right' :
+                 direction === 'up' ? 'slide-in-up' : 'slide-in-down';
+  const outAnim = direction === 'left' ? 'slide-out-left' :
+                  direction === 'right' ? 'slide-out-right' :
+                  direction === 'up' ? 'slide-out-up' : 'slide-out-down';
+
   if(name==='entry')    buildEntry();
   if(name==='income')   buildIncomeEntry();
   if(name==='history')  renderHist();
   if(name==='settings') renderSettings();
 
-  // Animate strip to new page
-  setStripPos(getStripOffset(name), true);
+  newPage.style.display = 'block';
+  newPage.classList.remove('active','slide-in-left','slide-in-right','slide-in-up','slide-in-down');
+  newPage.classList.add(inAnim);
+
+  if(oldPage){
+    oldPage.classList.remove('active');
+    oldPage.classList.add(outAnim);
+    setTimeout(()=>{
+      oldPage.classList.remove(outAnim);
+      oldPage.style.display = '';
+    }, 380);
+  }
+
+  setTimeout(()=>{
+    newPage.classList.remove(inAnim);
+    newPage.classList.add('active');
+    isAnimating = false;
+  }, 360);
 
   currentPage = name;
   document.querySelectorAll('.nav-btn').forEach((b,i)=>{
     b.classList.toggle('active', PAGE_ORDER[i]===name);
   });
   document.getElementById('month-bar-el').classList.toggle('hidden', name==='settings');
-
-  setTimeout(function(){
-    isAnimating = false;
-  }, STRIP_DUR);
 };
 
 // ── DASHBOARD ──
@@ -2311,8 +2312,6 @@ function toast(msg){
 
 })();// ── START ──
 updateMonthLabel();
-// Init strip position
-document.getElementById('page-strip').style.transform = 'translateX(0%)';
 init();
 document.getElementById('income-amt-input').addEventListener('input', updIncomeBtn);
 document.getElementById('income-amt-input').addEventListener('keydown',e=>{if(e.key==='Enter'){document.getElementById('income-note-input').focus();}});
