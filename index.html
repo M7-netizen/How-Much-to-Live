@@ -2205,7 +2205,7 @@ function toast(msg){
 (function(){
   var sx=0, sy=0, dx=0, vx=0, lx=0, lt=0;
   var axis=null, lockedDir=null, side=null;
-  var active=false;
+  var active=false, committed=false;
   var THRESH=0.28, VTHRESH=0.3;
 
   function W(){ return window.innerWidth; }
@@ -2223,15 +2223,134 @@ function toast(msg){
     };
   }
 
+  // Shared wrapper that holds cur + next side by side
+  var wrap = null;
+  var curEl = null, nextEl = null;
+
+  function setupDrag(dir, target){
+    // Pre-render target page content before showing
+    if(target==='entry')   buildEntry();
+    if(target==='income')  buildIncomeEntry();
+    if(target==='history') renderHist();
+    if(target==='settings') renderSettings();
+
+    curEl  = document.getElementById('page-'+currentPage);
+    nextEl = document.getElementById('page-'+target);
+    var container = document.getElementById('pages-container');
+
+    // Create a sliding wrapper inside container
+    wrap = document.createElement('div');
+    wrap.style.cssText = 'display:flex;width:200%;height:100%;position:absolute;top:0;left:0;will-change:transform;';
+
+    // Snapshot height
+    container.style.height = curEl.offsetHeight + 'px';
+    container.style.position = 'relative';
+    container.style.overflow = 'hidden';
+
+    // Clone styles so pages sit side by side at 50% each
+    curEl.style.display = 'block';
+    nextEl.style.display = 'block';
+    curEl.style.width  = '50%';
+    nextEl.style.width = '50%';
+    curEl.style.flexShrink  = '0';
+    nextEl.style.flexShrink = '0';
+    curEl.style.boxSizing   = 'border-box';
+    nextEl.style.boxSizing  = 'border-box';
+
+    if(dir==='left'){
+      // next is to the right: [cur][next]
+      wrap.appendChild(curEl);
+      wrap.appendChild(nextEl);
+      wrap.style.transform = 'translateX(0)';
+    } else {
+      // next is to the left: [next][cur]
+      wrap.appendChild(nextEl);
+      wrap.appendChild(curEl);
+      wrap.style.transform = 'translateX(-50%)';
+    }
+    container.appendChild(wrap);
+  }
+
+  function teardown(){
+    if(!wrap) return;
+    var container = document.getElementById('pages-container');
+    // Move pages back out of wrap
+    container.appendChild(curEl);
+    container.appendChild(nextEl);
+    container.removeChild(wrap);
+    wrap = null;
+    // Reset styles
+    curEl.style.cssText  = '';
+    nextEl.style.cssText = '';
+    container.style.height   = '';
+    container.style.position = '';
+    container.style.overflow = '';
+    curEl = null; nextEl = null;
+  }
+
+  function applyDrag(){
+    if(!wrap) return;
+    var pct = (dx / W()) * 50; // 50% = full page width in 200% wrapper
+    if(lockedDir==='left'){
+      // dragging left: wrap moves left from 0%
+      var val = Math.max(-50, Math.min(0, pct));
+      wrap.style.transform = 'translateX('+val+'%)';
+    } else {
+      // dragging right: wrap moves right from -50%
+      var val = Math.max(-50, Math.min(0, -50 + pct));
+      wrap.style.transform = 'translateX('+val+'%)';
+    }
+  }
+
+  function commitNav(target, fingerLeft, snapPct){
+    if(!wrap) return;
+    var ease = 'cubic-bezier(0.4,0,0.2,1)';
+    var remaining = fingerLeft ? (-50 - snapPct) : (0 - snapPct);
+    // Duration proportional to remaining distance
+    var dur = Math.max(120, Math.round(280 * Math.abs(remaining) / 50));
+    wrap.style.transition = 'transform '+dur+'ms '+ease;
+    wrap.style.transform  = 'translateX('+(fingerLeft ? '-50%' : '0%')+')';
+    setTimeout(function(){
+      teardown();
+      // Finalize page state
+      document.getElementById('page-'+currentPage).classList.remove('active');
+      document.getElementById('page-'+currentPage).style.display = 'none';
+      currentPage = target;
+      document.getElementById('page-'+currentPage).classList.add('active');
+      document.getElementById('page-'+currentPage).style.display = '';
+      document.querySelectorAll('.nav-btn').forEach(function(b,i){
+        b.classList.toggle('active', PAGE_ORDER[i]===currentPage);
+      });
+      document.getElementById('month-bar-el').classList.toggle('hidden', currentPage==='settings');
+      isAnimating = false;
+    }, dur);
+  }
+
+  function snapBackNav(snapPct){
+    if(!wrap) return;
+    var ease = 'cubic-bezier(0.25,0.1,0.25,1)';
+    var target = lockedDir==='left' ? '0%' : '-50%';
+    var remaining = Math.abs(snapPct - parseFloat(target));
+    var dur = Math.max(100, Math.round(220 * remaining / 50));
+    wrap.style.transition = 'transform '+dur+'ms '+ease;
+    wrap.style.transform  = 'translateX('+target+')';
+    setTimeout(function(){
+      teardown();
+      document.getElementById('page-'+currentPage).classList.add('active');
+      isAnimating = false;
+    }, dur);
+  }
+
+  // ── TOUCH START ──
   document.addEventListener('touchstart', function(e){
     if(isAnimating) return;
     if(e.target.closest('input,select,textarea,button,.myr-box,.settings-cat-body,.modal-overlay,#cat-detail-overlay,#edit-overlay,.amount-row')) return;
-    sx = lx = e.touches[0].clientX;
-    sy = e.touches[0].clientY;
-    lt = Date.now();
-    dx=0; vx=0; axis=null; lockedDir=null; side=null; active=true;
+    sx=lx=e.touches[0].clientX; sy=e.touches[0].clientY;
+    lt=Date.now(); dx=0; vx=0; axis=null; lockedDir=null; side=null;
+    active=true; committed=false;
   }, {passive:true});
 
+  // ── TOUCH MOVE ──
   document.addEventListener('touchmove', function(e){
     if(!active || isAnimating) return;
     var x=e.touches[0].clientX, y=e.touches[0].clientY;
@@ -2247,27 +2366,45 @@ function toast(msg){
         lockedDir = dx<0 ? 'left' : 'right';
         var nb=getNeighbours();
         side = lockedDir==='left' ? nb.L : nb.R;
-        if(!side){ active=false; return; }
+        if(!side || isMonth(side)){ axis='v'; return; } // month: no drag-follow
+        // Setup drag DOM
+        isAnimating = true; // lock during setup
+        setupDrag(lockedDir, side);
+        isAnimating = false;
       }
     }
 
     if(axis==='h'){
       if(e.target.closest('input,select,textarea,.amount-row,.myr-box')){ active=false; return; }
       e.preventDefault();
+      applyDrag();
     }
   }, {passive:false});
 
+  // ── TOUCH END ──
   document.addEventListener('touchend', function(e){
     if(!active) return;
     active=false;
+
     if(axis==='h' && side){
       var abs=Math.abs(dx);
       var commit = abs>W()*THRESH || (Math.abs(vx)>VTHRESH && abs>15);
-      if(!commit) return;
+
       if(isMonth(side)){
-        changeMonth(side==='MONTH_PREV' ? -1 : 1);
+        // Month swipe — no drag-follow, just direct change
+        if(commit) changeMonth(side==='MONTH_PREV' ? -1 : 1);
+        return;
+      }
+
+      // Get current wrap translateX percentage
+      var curTransform = wrap ? wrap.style.transform : '';
+      var snapPct = curTransform ? parseFloat(curTransform.replace('translateX(','').replace(')','')) : 0;
+
+      isAnimating = true;
+      if(commit){
+        commitNav(side, lockedDir==='left', snapPct);
       } else {
-        showPage(side, lockedDir);
+        snapBackNav(snapPct);
       }
     }
   }, {passive:true});
