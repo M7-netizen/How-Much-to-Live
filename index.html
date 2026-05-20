@@ -562,7 +562,18 @@
 
   <!-- HISTORY -->
   <div class="page" id="page-history">
-    <div id="filter-bar-wrap" style="margin-top:12px;display:none;">
+    <!-- Search bar -->
+    <div style="margin-top:12px;padding:0 4px;">
+      <input type="text" id="hist-search" placeholder="搜索金额、备注、类别…" oninput="renderHist()"
+        style="width:100%;box-sizing:border-box;padding:10px 14px;border-radius:12px;border:1px solid var(--border);
+        background:rgba(255,255,255,0.04);color:var(--text);font-size:14px;font-family:var(--font-sans);outline:none;">
+    </div>
+    <!-- Type toggle -->
+    <div style="display:flex;gap:8px;margin:10px 4px 0;">
+      <button id="hist-type-expense" class="nav-btn active" onclick="setHistType('expense')" style="flex:1;text-align:center;padding:6px 0;font-size:12px;">支出</button>
+      <button id="hist-type-income" class="nav-btn" onclick="setHistType('income')" style="flex:1;text-align:center;padding:6px 0;font-size:12px;">收入</button>
+    </div>
+    <div id="filter-bar-wrap" style="margin-top:8px;display:none;">
       <div id="sub-nav-wrap" style="display:none;">
         <div class="sub-nav">
           <button class="sub-nav-btn" id="sub-nav-prev" onclick="navSub(-1)">‹ 上一个</button>
@@ -1069,7 +1080,13 @@ window.changeMonth=function(d){
   if(curM<1){curM=12;curY--;}
   historyFilter = null;
   updateMonthLabel();
+
+  // Animate dashboard content with same style as page transitions
+  const dash = document.getElementById('page-dashboard');
+  const anim = d < 0 ? 'slide-in-right' : 'slide-in-left';
+  dash.classList.add(anim);
   renderDash(); renderHist();
+  setTimeout(()=>{ dash.classList.remove(anim); }, 260);
 };
 function updateMonthLabel(){
   document.getElementById('month-label').textContent=`${curY} 年 ${MONTHS[curM-1]}`;
@@ -1347,12 +1364,31 @@ window.addTxn=async function(){
 };
 
 // ── HISTORY ──
-function renderHist(){
-  let mt=mTxns().slice().sort((a,b)=>new Date(b.date)-new Date(a.date));
+let histType = 'expense';
+function setHistType(t){
+  histType = t;
+  document.getElementById('hist-type-expense').classList.toggle('active', t==='expense');
+  document.getElementById('hist-type-income').classList.toggle('active', t==='income');
+  // Hide filter bar when viewing income
+  if(t==='income'){ document.getElementById('filter-bar-wrap').style.display='none'; }
+  renderHist();
+}
 
-  // Handle filter
+function renderHist(){
+  const isIncome = histType === 'income';
+  const searchEl = document.getElementById('hist-search');
+  const query = searchEl ? searchEl.value.trim().toLowerCase() : '';
+
+  let mt;
+  if(isIncome){
+    mt = incomeTxns.filter(t=>t.month===smk()).slice().sort((a,b)=>new Date(b.date)-new Date(a.date));
+  } else {
+    mt = mTxns().slice().sort((a,b)=>new Date(b.date)-new Date(a.date));
+  }
+
+  // Handle expense filter (only for expense view)
   const filterWrap = document.getElementById('filter-bar-wrap');
-  if(historyFilter){
+  if(!isIncome && historyFilter){
     const fCat = gc(historyFilter);
     let chipLabel = fCat ? `${fCat.emoji} ${fCat.label}` : historyFilter;
     if(historySubFilter) chipLabel += ` · ${historySubFilter}`;
@@ -1360,19 +1396,37 @@ function renderHist(){
     filterWrap.style.display = 'block';
     mt = mt.filter(t => t.catId === historyFilter);
     if(historySubFilter) mt = mt.filter(t => (t.sub||'直接记入') === historySubFilter || t.sub === historySubFilter);
-  } else {
+  } else if(!isIncome) {
     filterWrap.style.display = 'none';
   }
 
-  updateSubNav();
+  // Search filter
+  if(query){
+    mt = mt.filter(t=>{
+      const cat = isIncome ? incomeCats.find(c=>c.id===t.catId) : gc(t.catId);
+      const amtStr = t.amount.toFixed(2);
+      const catLabel = (cat?.label||'').toLowerCase();
+      const note = (t.note||'').toLowerCase();
+      const emoji = cat?.emoji||'';
+      return amtStr.includes(query) || catLabel.includes(query) || note.includes(query) || emoji.includes(query);
+    });
+  }
+
+  if(!isIncome) updateSubNav();
   const list=document.getElementById('history-list');
-  if(!mt.length){list.innerHTML='<div class="empty-state">'+(historySubFilter?'该细分本月暂无记录':historyFilter?'该类别本月暂无记录':'本月暂无记录')+'</div>';return;}
+  const emptyMsg = query ? '没有找到匹配的记录' : (isIncome ? '本月暂无收入记录' : (historySubFilter?'该细分本月暂无记录':historyFilter?'该类别本月暂无记录':'本月暂无记录'));
+  if(!mt.length){list.innerHTML='<div class="empty-state">'+emptyMsg+'</div>';return;}
   list.innerHTML='';
   mt.forEach((t,i)=>{
-    const cat=gc(t.catId);const d=new Date(t.date);
+    const cat = isIncome ? incomeCats.find(c=>c.id===t.catId) : gc(t.catId);
+    const d=new Date(t.date);
     const ds=`${d.getDate()} ${MONTHS[d.getMonth()]}  ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-    const isPending=pendingQueue.some(op=>op.type==='setTxn'&&op.data.id===t.id);
+    const isPending=pendingQueue.some(op=>op.type===(isIncome?'setIncomeTxn':'setTxn')&&op.data.id===t.id);
     const row=document.createElement('div');row.className='txn-row';row.style.animationDelay=(i*.03)+'s';
+    const amtColor = isIncome ? 'color:#6BA89A;' : '';
+    const amtPrefix = isIncome ? '+' : '';
+    const editBtn = isIncome ? '' : `<button class="del-btn" style="color:var(--text-dim);border:1px solid var(--border);border-radius:6px;padding:2px 8px;font-size:11px;" onclick="openEditTxn('${t.id}')">编辑</button>`;
+    const delFn = isIncome ? `delIncomeTxn('${t.id}')` : `delTxnFn('${t.id}')`;
     row.innerHTML=`
       <div class="txn-dot" style="background:${cat?.color||'#888'}"></div>
       <div class="txn-info">
@@ -1382,10 +1436,10 @@ function renderHist(){
         ${isPending?'<div class="txn-pending">⏳ 待同步</div>':''}
       </div>
       <div class="txn-right">
-        <div class="txn-amt">S$ ${t.amount.toFixed(2)}</div>
+        <div class="txn-amt" style="${amtColor}">${amtPrefix}S$ ${t.amount.toFixed(2)}</div>
         <div style="display:flex;gap:6px;">
-          <button class="del-btn" style="color:var(--text-dim);border:1px solid var(--border);border-radius:6px;padding:2px 8px;font-size:11px;" onclick="openEditTxn('${t.id}')">编辑</button>
-          <button class="del-btn" onclick="delTxnFn('${t.id}')">✕ 删除</button>
+          ${editBtn}
+          <button class="del-btn" onclick="${delFn}">✕ 删除</button>
         </div>
       </div>`;
     list.appendChild(row);
@@ -2225,7 +2279,7 @@ function toast(msg){
 
   document.addEventListener('touchstart', function(e){
     if(isAnimating) return;
-    if(e.target.closest('input,select,textarea,button,.myr-box,.settings-cat-body,.modal-overlay,#cat-detail-overlay,#edit-overlay,.amount-row')) return;
+    if(e.target.closest('input,select,textarea,.myr-box,.modal-overlay,#cat-detail-overlay,#edit-overlay,.amount-row')) return;
     sx=lx=e.touches[0].clientX; sy=e.touches[0].clientY;
     lt=Date.now(); dx=0; vx=0; axis=null; lockedDir=null; side=null; active=true;
   }, {passive:true});
@@ -2250,7 +2304,7 @@ function toast(msg){
     }
 
     if(axis==='h'){
-      if(e.target.closest('input,select,textarea,.amount-row,.myr-box')){ active=false; return; }
+      if(e.target.closest('input,select,textarea,.amount-row')){ active=false; return; }
       e.preventDefault();
     }
   }, {passive:false});
