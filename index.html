@@ -84,44 +84,44 @@
   }
   .page.slide-in-left{
     display:block;
-    animation:slideInLeft 0.38s cubic-bezier(0.25,0.46,0.45,0.94) forwards;
+    animation:slideInLeft 0.35s cubic-bezier(0.4,0,0.2,1) forwards;
   }
   .page.slide-in-right{
     display:block;
-    animation:slideInRight 0.38s cubic-bezier(0.25,0.46,0.45,0.94) forwards;
+    animation:slideInRight 0.35s cubic-bezier(0.4,0,0.2,1) forwards;
   }
   .page.slide-in-up{
     display:block;
-    animation:slideInUp 0.32s cubic-bezier(0.25,0.46,0.45,0.94) forwards;
+    animation:slideInUp 0.30s cubic-bezier(0.4,0,0.2,1) forwards;
   }
   .page.slide-in-down{
     display:block;
-    animation:slideInDown 0.32s cubic-bezier(0.25,0.46,0.45,0.94) forwards;
+    animation:slideInDown 0.30s cubic-bezier(0.4,0,0.2,1) forwards;
   }
   .page.slide-out-left{
     display:block;
-    animation:slideOutLeft 0.38s cubic-bezier(0.25,0.46,0.45,0.94) forwards;
+    animation:slideOutLeft 0.35s cubic-bezier(0.4,0,0.2,1) forwards;
   }
   .page.slide-out-right{
     display:block;
-    animation:slideOutRight 0.38s cubic-bezier(0.25,0.46,0.45,0.94) forwards;
+    animation:slideOutRight 0.35s cubic-bezier(0.4,0,0.2,1) forwards;
   }
   .page.slide-out-up{
     display:block;
-    animation:slideOutUp 0.32s cubic-bezier(0.25,0.46,0.45,0.94) forwards;
+    animation:slideOutUp 0.30s cubic-bezier(0.4,0,0.2,1) forwards;
   }
   .page.slide-out-down{
     display:block;
-    animation:slideOutDown 0.32s cubic-bezier(0.25,0.46,0.45,0.94) forwards;
+    animation:slideOutDown 0.30s cubic-bezier(0.4,0,0.2,1) forwards;
   }
-  @keyframes slideInLeft{from{transform:translateX(100%);opacity:0.85;}to{transform:translateX(0);opacity:1;}}
-  @keyframes slideInRight{from{transform:translateX(-100%);opacity:0.85;}to{transform:translateX(0);opacity:1;}}
-  @keyframes slideInUp{from{transform:translateY(-40px);opacity:0;}to{transform:translateY(0);opacity:1;}}
-  @keyframes slideInDown{from{transform:translateY(40px);opacity:0;}to{transform:translateY(0);opacity:1;}}
-  @keyframes slideOutLeft{from{transform:translateX(0);opacity:1;}to{transform:translateX(-100%);opacity:0.85;}}
-  @keyframes slideOutRight{from{transform:translateX(0);opacity:1;}to{transform:translateX(100%);opacity:0.85;}}
-  @keyframes slideOutUp{from{transform:translateY(0);opacity:1;}to{transform:translateY(-40px);opacity:0;}}
-  @keyframes slideOutDown{from{transform:translateY(0);opacity:1;}to{transform:translateY(40px);opacity:0;}}
+  @keyframes slideInLeft{from{transform:translateX(100%);}to{transform:translateX(0);}}
+  @keyframes slideInRight{from{transform:translateX(-100%);}to{transform:translateX(0);}}
+  @keyframes slideInUp{from{transform:translateY(-30px);opacity:0;}to{transform:translateY(0);opacity:1;}}
+  @keyframes slideInDown{from{transform:translateY(30px);opacity:0;}to{transform:translateY(0);opacity:1;}}
+  @keyframes slideOutLeft{from{transform:translateX(0);}to{transform:translateX(-30%);}}
+  @keyframes slideOutRight{from{transform:translateX(0);}to{transform:translateX(30%);}}
+  @keyframes slideOutUp{from{transform:translateY(0);opacity:1;}to{transform:translateY(-30px);opacity:0;}}
+  @keyframes slideOutDown{from{transform:translateY(0);opacity:1;}to{transform:translateY(30px);opacity:0;}}
 
   /* DASHBOARD */
   .total-card{background:var(--gold-dim);border:1px solid var(--gold-border);border-radius:var(--radius);
@@ -1125,7 +1125,7 @@ window.showPage=function(name, direction){
     newPage.classList.remove(inAnim);
     newPage.classList.add('active');
     isAnimating = false;
-  }, 320);
+  }, 360);
 
   currentPage = name;
 
