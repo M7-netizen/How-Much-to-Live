@@ -114,12 +114,12 @@
     display:block;
     animation:slideOutDown 0.30s cubic-bezier(0.4,0,0.2,1) forwards;
   }
-  @keyframes slideInLeft{from{transform:translateX(100%);}to{transform:translateX(0);}}
-  @keyframes slideInRight{from{transform:translateX(-100%);}to{transform:translateX(0);}}
+  @keyframes slideInLeft{from{transform:translateX(40%);opacity:0;}to{transform:translateX(0);opacity:1;}}
+  @keyframes slideInRight{from{transform:translateX(-40%);opacity:0;}to{transform:translateX(0);opacity:1;}}
   @keyframes slideInUp{from{transform:translateY(-30px);opacity:0;}to{transform:translateY(0);opacity:1;}}
   @keyframes slideInDown{from{transform:translateY(30px);opacity:0;}to{transform:translateY(0);opacity:1;}}
-  @keyframes slideOutLeft{from{transform:translateX(0);}to{transform:translateX(-30%);}}
-  @keyframes slideOutRight{from{transform:translateX(0);}to{transform:translateX(30%);}}
+  @keyframes slideOutLeft{from{transform:translateX(0);opacity:1;}to{transform:translateX(-20%);opacity:0;}}
+  @keyframes slideOutRight{from{transform:translateX(0);opacity:1;}to{transform:translateX(20%);opacity:0;}}
   @keyframes slideOutUp{from{transform:translateY(0);opacity:1;}to{transform:translateY(-30px);opacity:0;}}
   @keyframes slideOutDown{from{transform:translateY(0);opacity:1;}to{transform:translateY(30px);opacity:0;}}
 
@@ -1102,13 +1102,19 @@ window.showPage=function(name, direction){
                   direction === 'right' ? 'slide-out-right' :
                   direction === 'up' ? 'slide-out-up' : 'slide-out-down';
 
-  // Render content
+  // Render into hidden page (no layout cost since display:none)
   if(name==='entry')    buildEntry();
   if(name==='income')   buildIncomeEntry();
   if(name==='history')  renderHist();
   if(name==='settings') renderSettings();
 
-  // Start outgoing animation immediately
+  // Make new page visible + force layout in one go
+  newPage.style.display = 'block';
+  newPage.classList.remove('active','slide-in-left','slide-in-right','slide-in-up','slide-in-down');
+  newPage.offsetHeight; // force layout NOW before animation starts
+
+  // Both animations start in same frame — no delay
+  newPage.classList.add(inAnim);
   if(oldPage){
     oldPage.classList.remove('active');
     oldPage.classList.add(outAnim);
@@ -1118,19 +1124,11 @@ window.showPage=function(name, direction){
     }, 270);
   }
 
-  // Push incoming animation to next frame — browser finishes layout first
-  requestAnimationFrame(()=>{
-    newPage.style.display = 'block';
-    newPage.classList.remove('active','slide-in-left','slide-in-right','slide-in-up','slide-in-down');
-    newPage.offsetHeight; // force reflow
-    newPage.classList.add(inAnim);
-  });
-
   setTimeout(()=>{
     newPage.classList.remove(inAnim);
     newPage.classList.add('active');
     isAnimating = false;
-  }, 280);
+  }, 270);
 
   currentPage = name;
   document.querySelectorAll('.nav-btn').forEach((b,i)=>{
