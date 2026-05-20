@@ -1009,20 +1009,7 @@ function hideLoading(){
     const el = document.getElementById('loading');
     if(el){ el.classList.add('done'); setTimeout(()=>{
       el.remove();
-      // Pre-warm: briefly make pages visible for layout, then hide properly
-      document.querySelectorAll('.page:not(.active)').forEach(p=>{
-        p.style.display='block';
-        p.style.visibility='hidden';
-        p.style.position='absolute';
-        p.style.pointerEvents='none';
-      });
-      document.getElementById('pages-container').offsetHeight; // single reflow
-      document.querySelectorAll('.page:not(.active)').forEach(p=>{
-        p.style.display='none';
-        p.style.visibility='';
-        p.style.position='';
-        p.style.pointerEvents='';
-      });
+
     }, 700); }
   }, 420);
 }
