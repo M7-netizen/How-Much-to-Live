@@ -2202,7 +2202,7 @@ function toast(msg){
 (function(){
   var sx=0, sy=0, dx=0, vx=0, lx=0, lt=0;
   var axis=null, lockedDir=null, side=null;
-  var active=false, animating=false;
+  var active=false;
   var THRESH=0.28, VTHRESH=0.3;
 
   function W(){ return window.innerWidth; }
@@ -2220,113 +2220,51 @@ function toast(msg){
     };
   }
 
-  // ── Page transition (CSS-only, no DOM surgery) ──
-  function goPage(target, fingerLeft){
-    if(animating) return;
-    animating = true;
-    var dur = 340;
-    var ease = 'cubic-bezier(0.25,0.1,0.25,1)';
-
-    var curEl  = document.getElementById('page-'+currentPage);
-    var nextEl = document.getElementById('page-'+target);
-
-    // Position nextEl off-screen without disrupting layout
-    nextEl.style.position   = 'absolute';
-    nextEl.style.top        = '0';
-    nextEl.style.left       = '0';
-    nextEl.style.width      = '100%';
-    nextEl.style.display    = 'block';
-    nextEl.style.transform  = 'translateX('+(fingerLeft ? '100%' : '-100%')+')';
-    nextEl.style.transition = 'none';
-    curEl.style.position    = 'absolute';
-    curEl.style.top         = '0';
-    curEl.style.left        = '0';
-    curEl.style.width       = '100%';
-    // Lock container height so it doesn't collapse
-    var container = document.getElementById('pages-container');
-    container.style.height  = curEl.offsetHeight + 'px';
-
-    // Force reflow
-    nextEl.getBoundingClientRect();
-
-    // Animate both
-    curEl.style.transition  = 'transform '+dur+'ms '+ease;
-    curEl.style.transform   = 'translateX('+(fingerLeft ? '-100%' : '100%')+')';
-    nextEl.style.transition = 'transform '+dur+'ms '+ease;
-    nextEl.style.transform  = 'translateX(0)';
-
-    setTimeout(function(){
-      // Clean up
-      curEl.removeAttribute('style');
-      curEl.classList.remove('active');
-      curEl.style.display = 'none';
-      nextEl.removeAttribute('style');
-      nextEl.classList.add('active');
-      container.style.height = '';
-
-      currentPage = target;
-      document.querySelectorAll('.nav-btn').forEach(function(b,i){
-        b.classList.toggle('active', PAGE_ORDER[i]===currentPage);
-      });
-      document.getElementById('month-bar-el').classList.toggle('hidden', currentPage==='settings');
-      if(currentPage==='entry')   buildEntry();
-      if(currentPage==='income')  buildIncomeEntry();
-      if(currentPage==='history') renderHist();
-      if(currentPage==='settings') setTimeout(function(){renderSettings();}, 50);
-
-      animating = false;
-    }, dur + 50);
-  }
-
-  // ── TOUCH START ──
   document.addEventListener('touchstart', function(e){
-    if(animating || isAnimating) return;
+    if(isAnimating) return;
     if(e.target.closest('input,select,textarea,button,.myr-box,.settings-cat-body,.modal-overlay,#cat-detail-overlay,#edit-overlay,.amount-row')) return;
     sx = lx = e.touches[0].clientX;
     sy = e.touches[0].clientY;
     lt = Date.now();
-    dx = 0; vx = 0; axis = null; lockedDir = null; side = null; active = true;
+    dx=0; vx=0; axis=null; lockedDir=null; side=null; active=true;
   }, {passive:true});
 
-  // ── TOUCH MOVE ──
   document.addEventListener('touchmove', function(e){
-    if(!active || animating || isAnimating) return;
-    var x = e.touches[0].clientX, y = e.touches[0].clientY;
-    var now = Date.now(), dt = Math.max(now-lt, 1);
-    vx = (x-lx)/dt; lx = x; lt = now;
-    dx = x - sx;
-    var dy = y - sy;
+    if(!active || isAnimating) return;
+    var x=e.touches[0].clientX, y=e.touches[0].clientY;
+    var now=Date.now(), dt=Math.max(now-lt,1);
+    vx=(x-lx)/dt; lx=x; lt=now;
+    dx=x-sx;
+    var dy=y-sy;
 
     if(!axis){
-      if(Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
-      axis = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
-      if(axis === 'h'){
-        lockedDir = dx < 0 ? 'left' : 'right';
-        var nb = getNeighbours();
-        side = lockedDir === 'left' ? nb.L : nb.R;
-        if(!side){ active = false; return; }
+      if(Math.abs(dx)<6 && Math.abs(dy)<6) return;
+      axis = Math.abs(dx)>Math.abs(dy) ? 'h' : 'v';
+      if(axis==='h'){
+        lockedDir = dx<0 ? 'left' : 'right';
+        var nb=getNeighbours();
+        side = lockedDir==='left' ? nb.L : nb.R;
+        if(!side){ active=false; return; }
       }
     }
 
-    if(axis === 'h'){
+    if(axis==='h'){
       if(e.target.closest('input,select,textarea,.amount-row,.myr-box')){ active=false; return; }
       e.preventDefault();
     }
   }, {passive:false});
 
-  // ── TOUCH END ──
   document.addEventListener('touchend', function(e){
     if(!active) return;
-    active = false;
-
-    if(axis === 'h' && side){
-      var abs  = Math.abs(dx);
-      var commit = abs > W()*THRESH || (Math.abs(vx) > VTHRESH && abs > 15);
-
+    active=false;
+    if(axis==='h' && side){
+      var abs=Math.abs(dx);
+      var commit = abs>W()*THRESH || (Math.abs(vx)>VTHRESH && abs>15);
+      if(!commit) return;
       if(isMonth(side)){
-        if(commit) changeMonth(side === 'MONTH_PREV' ? -1 : 1);
-      } else if(commit){
-        goPage(side, lockedDir === 'left');
+        changeMonth(side==='MONTH_PREV' ? -1 : 1);
+      } else {
+        showPage(side, lockedDir);
       }
     }
   }, {passive:true});
