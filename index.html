@@ -564,7 +564,7 @@
   <div class="page" id="page-history">
     <!-- Search bar -->
     <div style="margin-top:12px;padding:0 4px;">
-      <input type="text" id="hist-search" placeholder="搜索金额、备注、类别…" oninput="renderHist()"
+      <input type="text" id="hist-search" placeholder="搜索金额、备注、类别…" oninput="window.renderHist()"
         style="width:100%;box-sizing:border-box;padding:10px 14px;border-radius:12px;border:1px solid var(--border);
         background:rgba(255,255,255,0.04);color:var(--text);font-size:14px;font-family:var(--font-sans);outline:none;">
     </div>
@@ -1365,7 +1365,7 @@ window.addTxn=async function(){
 
 // ── HISTORY ──
 let histType = 'expense';
-function setHistType(t){
+window.setHistType=function(t){
   histType = t;
   document.getElementById('hist-type-expense').classList.toggle('active', t==='expense');
   document.getElementById('hist-type-income').classList.toggle('active', t==='income');
@@ -1374,7 +1374,7 @@ function setHistType(t){
   renderHist();
 }
 
-function renderHist(){
+window.renderHist=function(){
   const isIncome = histType === 'income';
   const searchEl = document.getElementById('hist-search');
   const query = searchEl ? searchEl.value.trim().toLowerCase() : '';
@@ -2279,7 +2279,7 @@ function toast(msg){
 
   document.addEventListener('touchstart', function(e){
     if(isAnimating) return;
-    if(e.target.closest('input,select,textarea,.myr-box,.modal-overlay,#cat-detail-overlay,#edit-overlay,.amount-row')) return;
+    if(e.target.closest('select,.modal-overlay,#cat-detail-overlay,#edit-overlay')) return;
     sx=lx=e.touches[0].clientX; sy=e.touches[0].clientY;
     lt=Date.now(); dx=0; vx=0; axis=null; lockedDir=null; side=null; active=true;
   }, {passive:true});
@@ -2304,7 +2304,7 @@ function toast(msg){
     }
 
     if(axis==='h'){
-      if(e.target.closest('input,select,textarea,.amount-row')){ active=false; return; }
+      if(e.target.closest('select')){ active=false; return; }
       e.preventDefault();
     }
   }, {passive:false});
