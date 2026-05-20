@@ -1099,14 +1099,18 @@ window.showPage=function(name, direction){
                   direction === 'right' ? 'slide-out-right' :
                   direction === 'up' ? 'slide-out-up' : 'slide-out-down';
 
-  if(name==='entry')    buildEntry();
-  if(name==='income')   buildIncomeEntry();
-  if(name==='history')  renderHist();
-  if(name==='settings') renderSettings();
-
+  // Start animation immediately - defer ALL renders to next frame
   newPage.style.display = 'block';
   newPage.classList.remove('active','slide-in-left','slide-in-right','slide-in-up','slide-in-down');
   newPage.classList.add(inAnim);
+
+  // Render content after animation starts
+  requestAnimationFrame(()=>{
+    if(name==='entry')    buildEntry();
+    if(name==='income')   buildIncomeEntry();
+    if(name==='history')  renderHist();
+    if(name==='settings') renderSettings();
+  });
 
   if(oldPage){
     oldPage.classList.remove('active');
