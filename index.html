@@ -71,6 +71,12 @@
   #month-bar-el.hidden{opacity:0;pointer-events:none;}
 
   /* PAGES */
+
+  .owner-switch{display:flex;gap:6px;margin-bottom:10px;}
+  .owner-btn{flex:1;padding:7px 0;border-radius:18px;border:1px solid var(--border);
+    background:transparent;color:var(--text-dim);font-size:12px;font-family:var(--font-sans);
+    cursor:pointer;transition:all .18s;text-align:center;}
+  .owner-btn.active{background:var(--gold);border-color:var(--gold);color:#0f0f0b;font-weight:600;}
   .pages-container{position:relative;overflow:hidden;min-height:0;}
   .page{
     display:none;
@@ -468,6 +474,7 @@
 <div class="wrap">
   <!-- DASHBOARD -->
   <div class="page active" id="page-dashboard">
+    <div class="owner-switch" id="dash-owner-switch" style="margin-top:10px;"></div>
     <div class="total-card">
       <div class="total-lbl">本月总支出</div>
       <div class="total-amt" id="total-amt">S$ 0.00</div>
@@ -499,6 +506,7 @@
   <div class="page" id="page-entry">
     <div class="entry-card">
       <div class="card-title">记一笔</div>
+      <div class="owner-switch" id="entry-owner-switch"></div>
       <div class="field-lbl">类别</div>
       <div class="cat-grid" id="cat-grid"></div>
       <div id="sub-area">
@@ -573,6 +581,8 @@
       <button id="hist-type-expense" class="nav-btn active" onclick="setHistType('expense')" style="flex:1;text-align:center;padding:6px 0;font-size:12px;">支出</button>
       <button id="hist-type-income" class="nav-btn" onclick="setHistType('income')" style="flex:1;text-align:center;padding:6px 0;font-size:12px;">收入</button>
     </div>
+    <!-- Owner filter -->
+    <div class="owner-switch" id="hist-owner-switch" style="margin-top:8px;"></div>
     <div id="filter-bar-wrap" style="margin-top:8px;display:none;">
       <div id="sub-nav-wrap" style="display:none;">
         <div class="sub-nav">
@@ -606,6 +616,7 @@
 
     <div class="entry-card" style="margin-top:0;">
       <div class="card-title">记录收入</div>
+      <div class="owner-switch" id="income-owner-switch"></div>
       <div class="field-lbl">类别</div>
       <div class="cat-grid" id="income-cat-grid"></div>
       <div class="field-lbl">金额（SGD）</div>
@@ -627,6 +638,23 @@
   <!-- SETTINGS -->
   <div class="page" id="page-settings">
     <div class="settings-wrap">
+      <!-- Owner names -->
+      <div class="settings-header">
+        <div class="settings-title">记账人设置</div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:20px;">
+        <div style="flex:1;">
+          <div class="field-lbl" style="margin-bottom:4px;">记账人 1</div>
+          <input type="text" id="owner1-input" value="" onchange="updateOwnerName(0,this.value)"
+            style="width:100%;box-sizing:border-box;padding:8px 12px;border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,0.04);color:var(--text);font-size:14px;">
+        </div>
+        <div style="flex:1;">
+          <div class="field-lbl" style="margin-bottom:4px;">记账人 2</div>
+          <input type="text" id="owner2-input" value="" onchange="updateOwnerName(1,this.value)"
+            style="width:100%;box-sizing:border-box;padding:8px 12px;border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,0.04);color:var(--text);font-size:14px;">
+        </div>
+      </div>
+
       <div class="settings-header">
         <div class="settings-title">类别管理</div>
         <button class="add-cat-btn" onclick="openAddCatModal()">＋ 新增类别</button>
@@ -798,6 +826,14 @@ let pendingQueue = JSON.parse(localStorage.getItem('mz_pending') || '[]'); // of
 const now = new Date();
 let curY=now.getFullYear(), curM=now.getMonth()+1;
 let selCat=null, selSub=null;
+
+// Owner system
+let owners = JSON.parse(localStorage.getItem('mz_owners') || '["我","生活搭子"]');
+let curOwner = localStorage.getItem('mz_curOwner') || owners[0];
+let dashOwner = localStorage.getItem('mz_dashOwner') || 'all'; // 'all', owners[0], owners[1]
+function saveOwners(){ localStorage.setItem('mz_owners', JSON.stringify(owners)); }
+function setCurOwner(o){ curOwner=o; localStorage.setItem('mz_curOwner',o); updateOwnerUI(); }
+function setDashOwner(o){ dashOwner=o; localStorage.setItem('mz_dashOwner',o); renderDash(); }
 let modalMode='add', modalEditId=null, modalColor=PALETTE[0];
 let isOnline = navigator.onLine;
 let unsubTxns = null;
@@ -1096,6 +1132,59 @@ function updateMonthLabel(){
 // ── PAGES ──
 const PAGE_ORDER = ['dashboard','entry','income','history','settings'];
 let currentPage = 'dashboard';
+
+// Owner UI
+function updateOwnerUI(){
+  // Entry page owner switch
+  buildOwnerSwitch('entry-owner-switch', curOwner, function(o){ setCurOwner(o); });
+  // Income page owner switch
+  buildOwnerSwitch('income-owner-switch', curOwner, function(o){ setCurOwner(o); });
+  // Dashboard owner tabs
+  buildDashOwnerSwitch();
+}
+
+function buildOwnerSwitch(elId, selected, onSelect){
+  var el = document.getElementById(elId);
+  if(!el) return;
+  el.innerHTML = '';
+  owners.forEach(function(o){
+    var btn = document.createElement('button');
+    btn.className = 'owner-btn' + (o===selected?' active':'');
+    btn.textContent = o;
+    btn.onclick = function(){ onSelect(o); };
+    el.appendChild(btn);
+  });
+}
+
+window.updateOwnerName=function(idx, val){
+  val = val.trim();
+  if(!val) return;
+  var oldName = owners[idx];
+  owners[idx] = val;
+  saveOwners();
+  // Update curOwner if it was the old name
+  if(curOwner === oldName){ setCurOwner(val); }
+  if(dashOwner === oldName){ dashOwner=val; localStorage.setItem('mz_dashOwner',val); }
+  if(histOwner === oldName){ histOwner=val; }
+  updateOwnerUI();
+  renderDash();
+};
+
+function buildDashOwnerSwitch(){
+  var el = document.getElementById('dash-owner-switch');
+  if(!el) return;
+  el.innerHTML = '';
+  var opts = [{id:'all', label:'共同'}];
+  owners.forEach(function(o){ opts.push({id:o, label:o}); });
+  opts.forEach(function(opt){
+    var btn = document.createElement('button');
+    btn.className = 'owner-btn' + (dashOwner===opt.id?' active':'');
+    btn.textContent = opt.label;
+    btn.onclick = function(){ dashOwner=opt.id; localStorage.setItem('mz_dashOwner',opt.id); buildDashOwnerSwitch(); renderDash(); };
+    el.appendChild(btn);
+  });
+}
+
 let isAnimating = false;
 
 window.showPage=function(name, direction){
@@ -1155,13 +1244,21 @@ window.showPage=function(name, direction){
 };
 
 // ── DASHBOARD ──
-function mTxns(){return txns.filter(t=>t.month===smk());}
+function mTxns(ownerFilter){
+  var m = txns.filter(t=>t.month===smk());
+  if(ownerFilter && ownerFilter !== 'all') m = m.filter(t=>(t.owner||owners[0])===ownerFilter);
+  return m;
+}
 
 function renderDash(){
-  const mt=mTxns();
+  buildDashOwnerSwitch();
+  const mt=mTxns(dashOwner);
   const tot=mt.reduce((s,t)=>s+t.amount,0);
+  const ownerLabel = dashOwner==='all' ? '' : dashOwner+'的';
+  document.getElementById('total-lbl-el')?.remove();
   document.getElementById('total-amt').textContent=`S$ ${tot.toFixed(2)}`;
-  const incTot = incomeTxns.filter(t=>t.month===smk()).reduce((s,t)=>s+t.amount,0);
+  const incFiltered = dashOwner==='all' ? incomeTxns.filter(t=>t.month===smk()) : incomeTxns.filter(t=>t.month===smk()&&(t.owner||owners[0])===dashOwner);
+  const incTot = incFiltered.reduce((s,t)=>s+t.amount,0);
   const net = incTot - tot;
   const netStr = net >= 0 ? `+S$ ${net.toFixed(2)}` : `-S$ ${Math.abs(net).toFixed(2)}`;
   const netColor = net >= 0 ? '#6BA89A' : '#c97a7a';
@@ -1276,6 +1373,7 @@ function buildEntry(){
   document.getElementById('amt-input').value='';
   document.getElementById('note-input').value='';
   const sb=document.getElementById('submit-btn');sb.disabled=true;sb.textContent='＋ 记入';
+  buildOwnerSwitch('entry-owner-switch', curOwner, function(o){ setCurOwner(o); });
 }
 
 function selCatFn(catId){
@@ -1321,7 +1419,7 @@ window.addTxn=async function(){
   const note=document.getElementById('note-input').value.trim();
   if(!selCat||!amt||amt<=0)return;
   const now_ts=new Date().toISOString();
-  const txn={id:gid(),month:smk(),catId:selCat,sub:selSub||'',amount:amt,note,date:now_ts};
+  const txn={id:gid(),month:smk(),catId:selCat,sub:selSub||'',amount:amt,note,date:now_ts,owner:curOwner};
 
   // Optimistic local update
   txns.unshift(txn);
@@ -1365,6 +1463,26 @@ window.addTxn=async function(){
 
 // ── HISTORY ──
 let histType = 'expense';
+let histOwner = 'all';
+window.setHistOwner=function(o){
+  histOwner=o;
+  buildOwnerSwitch3('hist-owner-switch', histOwner, function(v){ window.setHistOwner(v); });
+  window.renderHist();
+};
+
+function buildOwnerSwitch3(elId, selected, onSelect){
+  var el=document.getElementById(elId);
+  if(!el) return;
+  el.innerHTML='';
+  [{id:'all',label:'全部'}].concat(owners.map(function(o){return{id:o,label:o};})).forEach(function(opt){
+    var btn=document.createElement('button');
+    btn.className='owner-btn'+(selected===opt.id?' active':'');
+    btn.textContent=opt.label;
+    btn.onclick=function(){ onSelect(opt.id); };
+    el.appendChild(btn);
+  });
+}
+
 window.setHistType=function(t){
   histType = t;
   document.getElementById('hist-type-expense').classList.toggle('active', t==='expense');
@@ -1379,11 +1497,19 @@ window.renderHist=function(){
   const searchEl = document.getElementById('hist-search');
   const query = searchEl ? searchEl.value.trim().toLowerCase() : '';
 
+  // Build owner switch
+  buildOwnerSwitch3('hist-owner-switch', histOwner, function(v){ window.setHistOwner(v); });
+
   let mt;
   if(isIncome){
     mt = incomeTxns.filter(t=>t.month===smk()).slice().sort((a,b)=>new Date(b.date)-new Date(a.date));
   } else {
     mt = mTxns().slice().sort((a,b)=>new Date(b.date)-new Date(a.date));
+  }
+
+  // Owner filter
+  if(histOwner !== 'all'){
+    mt = mt.filter(t=>(t.owner||owners[0])===histOwner);
   }
 
   // Handle expense filter (only for expense view)
@@ -1432,7 +1558,7 @@ window.renderHist=function(){
       <div class="txn-info">
         <div class="txn-cat">${cat?.emoji||''} ${cat?.label||t.catId}${t.sub?' · '+t.sub:''}</div>
         ${t.note?`<div class="txn-note">${t.note}</div>`:''}
-        <div class="txn-date">${ds}</div>
+        <div class="txn-date">${ds}${t.owner && owners.length>1 ? " · "+t.owner : ""}</div>
         ${isPending?'<div class="txn-pending">⏳ 待同步</div>':''}
       </div>
       <div class="txn-right">
@@ -1460,6 +1586,10 @@ window.delTxnFn=async function(id){
 
 // ── SETTINGS ──
 function renderSettings(keepOpenId){
+  // Populate owner name inputs
+  var o1=document.getElementById('owner1-input'); if(o1) o1.value=owners[0];
+  var o2=document.getElementById('owner2-input'); if(o2) o2.value=owners[1];
+
   const list=document.getElementById('settings-list');
   const openIds = keepOpenId ? [keepOpenId] : [...list.querySelectorAll('.settings-cat.open')].map(el=>el.dataset.id);
   list.innerHTML='';
@@ -2068,6 +2198,7 @@ function buildIncomeEntry(){
     };
     grid.appendChild(b);
   });
+  buildOwnerSwitch('income-owner-switch', curOwner, function(o){ setCurOwner(o); });
   const ai = document.getElementById('income-amt-input');
   const ni = document.getElementById('income-note-input');
   if(ai) ai.value = '';
@@ -2087,7 +2218,7 @@ window.addIncomeTxn = async function(){
   const amt = parseFloat(document.getElementById('income-amt-input').value);
   const note = document.getElementById('income-note-input').value.trim();
   if(!selIncomeCat || !amt || amt <= 0) return;
-  const txn = {id: gid(), month: smk(), catId: selIncomeCat, amount: amt, note, date: new Date().toISOString(), type:'income'};
+  const txn = {id: gid(), month: smk(), catId: selIncomeCat, amount: amt, note, date: new Date().toISOString(), type:'income', owner:curOwner};
   incomeTxns.unshift(txn);
   buildIncomeEntry();
   renderDash();
@@ -2126,7 +2257,7 @@ function renderIncomePage(){
       <div class="txn-info">
         <div class="txn-cat">${cat?.emoji||''} ${cat?.label||t.catId}</div>
         ${t.note?`<div class="txn-note">${t.note}</div>`:''}
-        <div class="txn-date">${ds}</div>
+        <div class="txn-date">${ds}${t.owner && owners.length>1 ? " · "+t.owner : ""}</div>
       </div>
       <div class="txn-right">
         <div class="txn-amt" style="color:#6BA89A">+S$ ${t.amount.toFixed(2)}</div>
