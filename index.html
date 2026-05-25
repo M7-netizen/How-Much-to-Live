@@ -1262,12 +1262,12 @@ function buildDashOwnerSwitch(){
       btn.style.opacity = '0.9';
       btn.style.boxShadow = '0 4px 16px rgba(0,0,0,0.4)';
       if(navigator.vibrate) navigator.vibrate(20);
-    }, 300);
+    }, 200);
   }
 
   function moveDrag(clientX){
     if(!state.isDragging) {
-      if(Math.abs(clientX - state.startX) > 5) clearTimeout(state.pressTimer);
+      if(Math.abs(clientX - state.startX) > 15) clearTimeout(state.pressTimer);
       return;
     }
     var dx = clientX - state.startX;
