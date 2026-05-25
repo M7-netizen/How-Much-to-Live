@@ -2563,6 +2563,11 @@ function toast(msg){
 }
 
 
+// Prevent scroll wheel changing number input values
+document.addEventListener('wheel', function(e){
+  if(e.target.type === 'number'){ e.target.blur(); }
+}, {passive:true});
+
 // ── SWIPE GESTURES ──
 (function(){
   var sx=0, sy=0, dx=0, vx=0, lx=0, lt=0;
