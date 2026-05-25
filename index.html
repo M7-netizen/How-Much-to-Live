@@ -828,10 +828,13 @@ let curY=now.getFullYear(), curM=now.getMonth()+1;
 let selCat=null, selSub=null;
 
 // Owner system
-let owners = JSON.parse(localStorage.getItem('mz_owners') || '["我","生活搭子"]');
+let owners = JSON.parse(localStorage.getItem('mz_owners') || '["我","小乖"]');
 let curOwner = localStorage.getItem('mz_curOwner') || owners[0];
 let dashOwner = localStorage.getItem('mz_dashOwner') || 'all'; // 'all', owners[0], owners[1]
-function saveOwners(){ localStorage.setItem('mz_owners', JSON.stringify(owners)); }
+function saveOwners(){
+  localStorage.setItem('mz_owners', JSON.stringify(owners));
+  if(isOnline){ try{ setDoc(doc(db,'settings','shared'), {owners:owners, tabOrder:getDashTabOrder()}, {merge:true}); }catch(e){} }
+}
 function setCurOwner(o){ curOwner=o; localStorage.setItem('mz_curOwner',o); updateOwnerUI(); }
 function setDashOwner(o){ dashOwner=o; localStorage.setItem('mz_dashOwner',o); renderDash(); }
 let modalMode='add', modalEditId=null, modalColor=PALETTE[0];
@@ -935,6 +938,16 @@ async function fsDelCat(id){
 
 // ── SUBSCRIBE (real-time listeners) ──
 function subscribeAll(){
+  // Subscribe to shared settings (owner names, tab order)
+  onSnapshot(doc(db,'settings','shared'), snap => {
+    if(snap.exists()){
+      const d = snap.data();
+      if(d.owners){ owners = d.owners; saveOwners(); }
+      if(d.tabOrder){ localStorage.setItem('mz_dashTabOrder', JSON.stringify(d.tabOrder)); }
+      updateOwnerUI(); buildDashOwnerSwitch(); renderDash();
+    }
+  });
+
   // Expense Cats
   onSnapshot(collection(db,'cats'), snap => {
     if(snap.empty){
@@ -1195,9 +1208,12 @@ window.updateOwnerName=function(idx, val){
 function getDashTabOrder(){
   var saved = localStorage.getItem('mz_dashTabOrder');
   if(saved){ try{ return JSON.parse(saved); }catch(e){} }
-  return ['all'].concat(owners.slice());
+  return [owners[0], 'all', owners[1]];
 }
-function saveDashTabOrder(order){ localStorage.setItem('mz_dashTabOrder', JSON.stringify(order)); }
+function saveDashTabOrder(order){
+  localStorage.setItem('mz_dashTabOrder', JSON.stringify(order));
+  if(isOnline){ try{ setDoc(doc(db,'settings','shared'), {owners:owners, tabOrder:order}, {merge:true}); }catch(e){} }
+}
 
 function buildDashOwnerSwitch(){
   var el = document.getElementById('dash-owner-switch');
@@ -1224,7 +1240,7 @@ function buildDashOwnerSwitch(){
     btn.dataset.tabid = optId;
     btn.dataset.idx = idx;
     btn.style.transition = 'transform 0.2s ease';
-    btn.style.touchAction = 'none';
+    btn.style.touchAction = 'pan-y';
     btn.style.userSelect = 'none';
     btn.style.webkitUserSelect = 'none';
     btnEls.push(btn);
@@ -1339,6 +1355,82 @@ function buildDashOwnerSwitch(){
       }
       dragIdx = -1; dragEl = null;
     }, {passive:true});
+
+    // Mouse support for desktop
+    btn.addEventListener('mousedown', function(e){
+      startX = e.clientX;
+      startY = e.clientY;
+      isDragging = false;
+      btn._wasDragged = false;
+      longPressTimer = setTimeout(function(){
+        isDragging = true;
+        dragIdx = idx;
+        dragEl = btn;
+        btnRects = btnEls.map(function(b){ return b.getBoundingClientRect(); });
+        btn.style.transition = 'none';
+        btn.style.zIndex = '10';
+        btn.style.transform = 'scale(1.15)';
+        btn.style.opacity = '0.9';
+        btn.style.boxShadow = '0 4px 16px rgba(0,0,0,0.4)';
+      }, 300);
+
+      function onMouseMove(e2){
+        var dx = e2.clientX - startX;
+        var dy = e2.clientY - startY;
+        if(!isDragging && (Math.abs(dx)>5||Math.abs(dy)>5)){
+          clearTimeout(longPressTimer); return;
+        }
+        if(!isDragging) return;
+        e2.preventDefault();
+        btn.style.transform = 'translateX('+dx+'px) scale(1.15)';
+        var fingerX = e2.clientX;
+        var newIdx = dragIdx;
+        for(var i=0;i<btnRects.length;i++){
+          var r=btnRects[i]; var center=r.left+r.width/2;
+          if(i<dragIdx && fingerX<center){ newIdx=i; break; }
+          if(i>dragIdx && fingerX>center){ newIdx=i; }
+        }
+        btnEls.forEach(function(b,i){
+          if(i===dragIdx) return;
+          if(newIdx<=dragIdx){
+            if(i>=newIdx && i<dragIdx){ b.style.transition='transform 0.2s ease'; b.style.transform='translateX('+btnRects[dragIdx].width+'px)'; }
+            else { b.style.transition='transform 0.2s ease'; b.style.transform='translateX(0)'; }
+          } else {
+            if(i>dragIdx && i<=newIdx){ b.style.transition='transform 0.2s ease'; b.style.transform='translateX(-'+btnRects[dragIdx].width+'px)'; }
+            else { b.style.transition='transform 0.2s ease'; b.style.transform='translateX(0)'; }
+          }
+        });
+        btn._dropIdx = newIdx;
+      }
+
+      function onMouseUp(e2){
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+        clearTimeout(longPressTimer);
+        if(!isDragging){
+          if(!btn._wasDragged){
+            dashOwner=optId; localStorage.setItem('mz_dashOwner',optId);
+            buildDashOwnerSwitch(); renderDash();
+          }
+          return;
+        }
+        isDragging=false; btn._wasDragged=true;
+        var dropIdx = btn._dropIdx!==undefined ? btn._dropIdx : dragIdx;
+        btn.style.transition='all 0.2s ease'; btn.style.transform='';
+        btn.style.zIndex=''; btn.style.opacity=''; btn.style.boxShadow='';
+        if(dropIdx!==dragIdx){
+          var item=order.splice(dragIdx,1)[0]; order.splice(dropIdx,0,item);
+          saveDashTabOrder(order);
+          setTimeout(function(){ buildDashOwnerSwitch(); },220);
+        } else {
+          btnEls.forEach(function(b){ b.style.transition='all 0.2s ease'; b.style.transform=''; });
+        }
+        dragIdx=-1; dragEl=null;
+      }
+
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
+    });
 
     el.appendChild(btn);
   });
