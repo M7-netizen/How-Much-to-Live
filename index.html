@@ -578,8 +578,7 @@
       </div>
 
       <div class="field-lbl">金额（SGD）</div>
-      <div class="calc-display" id="amt-display" onclick="document.getElementById('amt-input').focus()">0</div>
-      <input type="hidden" id="amt-input">
+      <input type="text" class="calc-display" id="amt-input" placeholder="0" inputmode="decimal" autocomplete="off" oninput="calcInput('amt')">
       <div class="calc-result" id="amt-result"></div>
       <div class="calc-pad" id="amt-pad">
         <button type="button" class="calc-key" onclick="calcKey('amt','7')">7</button>
@@ -657,8 +656,7 @@
       <div class="field-lbl">类别</div>
       <div class="cat-grid" id="income-cat-grid"></div>
       <div class="field-lbl">金额（SGD）</div>
-      <div class="calc-display" id="income-amt-display" onclick="document.getElementById('income-amt-input').focus()">0</div>
-      <input type="hidden" id="income-amt-input">
+      <input type="text" class="calc-display" id="income-amt-input" placeholder="0" inputmode="decimal" autocomplete="off" oninput="calcInput('income-amt')">
       <div class="calc-result" id="income-amt-result"></div>
       <div class="calc-pad" id="income-amt-pad">
         <button type="button" class="calc-key" onclick="calcKey('income-amt','7')">7</button>
@@ -1597,7 +1595,7 @@ function buildEntry(){
   document.getElementById('sub-area').style.display='none';
   showMyrToggle(false);
   pendingMyrFee=null;
-  document.getElementById('amt-input').value=''; calcExprs['amt']=''; var _d=document.getElementById('amt-display'); if(_d) _d.textContent='0'; var _r=document.getElementById('amt-result'); if(_r) _r.textContent='';
+  document.getElementById('amt-input').value=''; var _r=document.getElementById('amt-result'); if(_r) _r.textContent='';
   document.getElementById('note-input').value='';
   const sb=document.getElementById('submit-btn');sb.disabled=true;sb.textContent='＋ 记入';
   buildOwnerSwitch('entry-owner-switch', curOwner, function(o){ setCurOwner(o); });
@@ -2220,6 +2218,7 @@ window.applyMyr = function() {
 
   // Fill main amount input with BASE amount only (excluding fee)
   document.getElementById('amt-input').value = baseSgd.toFixed(2);
+  calcInput('amt');
 
   // Store fee info for auto-creating fee txn
   if (feeRate > 0) {
@@ -2432,7 +2431,7 @@ function buildIncomeEntry(){
   buildOwnerSwitch('income-owner-switch', curOwner, function(o){ setCurOwner(o); });
   const ai = document.getElementById('income-amt-input');
   const ni = document.getElementById('income-note-input');
-  if(ai) ai.value = ''; calcExprs['income-amt']=''; var _id=document.getElementById('income-amt-display'); if(_id) _id.textContent='0'; var _ir=document.getElementById('income-amt-result'); if(_ir) _ir.textContent='';
+  if(ai) ai.value = ''; var _ir=document.getElementById('income-amt-result'); if(_ir) _ir.textContent='';
   if(ni) ni.value = '';
   updIncomeBtn();
   renderIncomePage();
@@ -2618,54 +2617,46 @@ function toast(msg){
 
 
 // Calculator for amount fields
-// Calculator keypad logic
-var calcExprs = {}; // store expression string per calc id
-
+// Calculator keypad logic — the input field itself holds the expression
 window.calcKey = function(id, key){
-  if(!calcExprs[id]) calcExprs[id] = '';
-  var expr = calcExprs[id];
-  var display = document.getElementById(id+'-display');
-  var result = document.getElementById(id+'-result');
-  var hidden = document.getElementById(id+'-input');
+  var input = document.getElementById(id+'-input');
+  if(!input) return;
+  var expr = input.value;
 
   if(key === '⌫'){
     expr = expr.slice(0, -1);
-  } else if(key === 'C'){
-    expr = '';
   } else if('0123456789.'.indexOf(key) >= 0){
-    // Prevent multiple dots in current number
-    var parts = expr.split(/[+\-×÷]/);
+    var parts = expr.split(/[+\-×÷*/]/);
     var lastPart = parts[parts.length-1];
     if(key === '.' && lastPart.indexOf('.') >= 0) return;
     expr += key;
   } else if('+-×÷'.indexOf(key) >= 0){
-    // Don't allow operator at start (except minus)
     if(!expr && key !== '-') return;
-    // Don't allow double operators
     var last = expr.slice(-1);
-    if('+-×÷'.indexOf(last) >= 0) expr = expr.slice(0,-1);
+    if('+-×÷*/'.indexOf(last) >= 0) expr = expr.slice(0,-1);
     expr += key;
   }
 
-  calcExprs[id] = expr;
-  display.textContent = expr || '0';
+  input.value = expr;
+  calcInput(id);
+};
 
-  // Calculate result
+// Called on any change (keypad or physical keyboard)
+window.calcInput = function(id){
+  var input = document.getElementById(id+'-input');
+  var result = document.getElementById(id+'-result');
+  if(!input) return;
+  var expr = input.value.trim();
+
   var val = evalCalc(expr);
-  if(val !== null && val > 0){
-    hidden.value = val;
-    // Show result only if expression has operators
-    if(expr.match(/[+\-×÷]/)){
+  if(result){
+    if(val !== null && expr.match(/[+\-×÷*/]/) && !expr.match(/^-/)){
       result.textContent = '= S$ ' + val.toFixed(2);
     } else {
       result.textContent = '';
     }
-  } else {
-    hidden.value = '';
-    result.textContent = '';
   }
 
-  // Trigger button state update
   if(id === 'amt') updBtn();
   if(id === 'income-amt') updIncomeBtn();
 };
@@ -2714,8 +2705,8 @@ function getCalcAmount(inputId){
   if(!el) return NaN;
   var val = el.value.trim();
   if(!val) return NaN;
-  var num = parseFloat(val);
-  return isNaN(num) ? NaN : num;
+  var result = evalCalc(val);
+  return result !== null && result > 0 ? result : NaN;
 }
 
 // Prevent scroll wheel changing number input values
