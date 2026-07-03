@@ -1886,10 +1886,27 @@ function renderSubTags(catId){
   const cat=gc(catId);const c=document.getElementById('stags-'+catId);if(!c)return;
   if(!cat||!cat.sub||cat.sub.length===0){c.innerHTML='<span class="no-sub">暂无细分</span>';return;}
   c.innerHTML=cat.sub.map((s,i)=>`
-    <div class="sub-tag">${s}
+    <div class="sub-tag">
+      <span class="sub-tag-label" onclick="editSub('${catId}',${i})" style="cursor:pointer;">${s}</span>
       <button class="sub-tag-del" onclick="delSub('${catId}',${i})">×</button>
     </div>`).join('');
 }
+
+window.editSub = async function(catId, idx){
+  const cat = gc(catId); if(!cat) return;
+  const oldVal = cat.sub[idx];
+  const newVal = prompt('编辑细分名称', oldVal);
+  if(newVal === null) return; // cancelled
+  const trimmed = newVal.trim();
+  if(!trimmed) return;
+  if(trimmed === oldVal) return;
+  if(cat.sub.includes(trimmed)){ toast('该细分已存在'); return; }
+  cat.sub[idx] = trimmed;
+  renderSubTags(catId);
+  renderSettings(catId);
+  toast(`已更新为「${trimmed}」`);
+  try{ await setDoc(doc(db,'cats',catId), cat); }catch(e){}
+};
 
 window.addSub=async function(catId){
   const inp=document.getElementById('sinput-'+catId);
@@ -1964,10 +1981,27 @@ function renderIncomeSubTags(catId){
     el.innerHTML='<span class="no-sub">暂无细分</span>';return;
   }
   el.innerHTML = cat.sub.map((s,i)=>`
-    <div class="sub-tag">${s}
+    <div class="sub-tag">
+      <span class="sub-tag-label" onclick="editIncomeSub('${catId}',${i})" style="cursor:pointer;">${s}</span>
       <button class="sub-tag-del" onclick="delIncomeSub('${catId}',${i})">×</button>
     </div>`).join('');
 }
+
+window.editIncomeSub = async function(catId, idx){
+  const cat = incomeCats.find(c=>c.id===catId); if(!cat) return;
+  const oldVal = cat.sub[idx];
+  const newVal = prompt('编辑细分名称', oldVal);
+  if(newVal === null) return;
+  const trimmed = newVal.trim();
+  if(!trimmed) return;
+  if(trimmed === oldVal) return;
+  if(cat.sub.includes(trimmed)){ toast('该细分已存在'); return; }
+  cat.sub[idx] = trimmed;
+  renderIncomeSubTags(catId);
+  renderSettings(catId);
+  toast(`已更新为「${trimmed}」`);
+  try{ await setDoc(doc(db,'incomeCats',catId), cat); }catch(e){}
+};
 
 window.addIncomeSub = async function(catId){
   const inp = document.getElementById('isinput-'+catId);
@@ -2738,7 +2772,7 @@ document.addEventListener('wheel', function(e){
 
   document.addEventListener('touchstart', function(e){
     if(isAnimating) return;
-    if(e.target.closest('select,.modal-overlay,#cat-detail-overlay,#edit-overlay')) return;
+    if(e.target.closest('select,.modal-overlay,#cat-detail-overlay,#edit-overlay,.settings-cat-body,.settings-cat-actions,.add-cat-btn,.drag-handle')) return;
     sx=lx=e.touches[0].clientX; sy=e.touches[0].clientY;
     lt=Date.now(); dx=0; vx=0; axis=null; lockedDir=null; side=null; active=true;
   }, {passive:true});
