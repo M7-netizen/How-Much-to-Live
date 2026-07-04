@@ -500,6 +500,15 @@
       <div class="total-amt" id="total-amt">S$ 0.00</div>
       <div class="total-sub" id="total-sub">暂无记录</div>
     </div>
+    <!-- CASH FLOW -->
+    <div class="entry-card" style="margin-top:14px;padding:16px 18px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div class="section-title" style="margin:0;">现金流</div>
+        <button class="add-cat-btn" style="font-size:11px;padding:4px 10px;" onclick="addRepay()">＋ 记录还款</button>
+      </div>
+      <div id="cashflow-body" style="margin-top:10px;font-size:13px;color:var(--text-dim);line-height:2;"></div>
+    </div>
+
     <div class="section-title">各类别开支排序</div>
     <div id="cat-list"></div>
     <div id="donut-section" style="display:none">
@@ -527,6 +536,7 @@
     <div class="entry-card">
       <div class="card-title">记一笔</div>
       <div class="owner-switch" id="entry-owner-switch"></div>
+      <div class="owner-switch" id="entry-pay-switch" style="margin-bottom:12px;"></div>
       <div class="field-lbl">类别</div>
       <div class="cat-grid" id="cat-grid"></div>
       <div id="sub-area">
@@ -872,6 +882,8 @@ let cats = [];
 let txns = [];
 let incomeCats = [];
 let incomeTxns = [];
+let repayTxns = [];
+let selPayType = localStorage.getItem('mz_payType') || 'cash';
 let historyFilter = null; // catId to filter by, null = all
 let historySubFilter = null; // sub to filter by
 let pendingQueue = JSON.parse(localStorage.getItem('mz_pending') || '[]'); // offline queue
@@ -913,6 +925,10 @@ async function flushPending(){
       batch.set(doc(db,'incomeTxns',op.data.id), op.data);
     } else if(op.type==='delIncomeTxn'){
       batch.delete(doc(db,'incomeTxns',op.id));
+    } else if(op.type==='setRepay'){
+      batch.set(doc(db,'repayTxns',op.data.id), op.data);
+    } else if(op.type==='delRepay'){
+      batch.delete(doc(db,'repayTxns',op.id));
     }
   });
   try {
@@ -990,6 +1006,12 @@ async function fsDelCat(id){
 
 // ── SUBSCRIBE (real-time listeners) ──
 function subscribeAll(){
+  // Subscribe to credit card repayment records
+  onSnapshot(query(collection(db,'repayTxns'), orderBy('date','desc')), snap => {
+    repayTxns = snap.docs.map(d=>d.data());
+    localStorage.setItem('mz_repay_cache', JSON.stringify(repayTxns));
+    renderDash();
+  });
   // Subscribe to shared settings (owner names, tab order)
   onSnapshot(doc(db,'settings','shared'), snap => {
     if(snap.exists()){
@@ -1090,6 +1112,8 @@ async function init(){
     const cachedITxns = localStorage.getItem('mz_itxns_cache');
     incomeCats = cachedICats ? JSON.parse(cachedICats) : JSON.parse(JSON.stringify(DEFAULT_INCOME_CATS));
     incomeTxns = cachedITxns ? JSON.parse(cachedITxns) : [];
+    const cachedRepay = localStorage.getItem('mz_repay_cache');
+    repayTxns = cachedRepay ? JSON.parse(cachedRepay) : [];
     // merge pending
     pendingQueue.filter(op=>op.type==='setTxn').forEach(op=>{
       if(!txns.find(t=>t.id===op.data.id)) txns.unshift(op.data);
@@ -1475,9 +1499,62 @@ function mTxns(ownerFilter){
   return m;
 }
 
+window.addRepay = async function(){
+  const raw = prompt('本月信用卡还款金额 (S$)');
+  if(raw === null) return;
+  const amt = evalCalc(raw.trim());
+  if(amt === null || amt <= 0){ toast('金额无效'); return; }
+  const note = prompt('备注（可选，如：DBS卡）') || '';
+  const rec = { id:gid(), month:smk(), amount:amt, note:note.trim(), date:new Date().toISOString(), owner:curOwner, type:'repay' };
+  repayTxns.unshift(rec);
+  renderDash();
+  toast(`已记录还款 S$ ${amt.toFixed(2)}`);
+  if(isOnline){ try{ await setDoc(doc(db,'repayTxns',rec.id), rec); return; }catch(e){} }
+  pendingQueue.push({type:'setRepay', data:rec}); savePending();
+};
+
+window.delRepay = async function(id){
+  repayTxns = repayTxns.filter(r=>r.id!==id);
+  renderDash();
+  toast('已删除还款记录');
+  if(isOnline){ try{ await deleteDoc(doc(db,'repayTxns',id)); return; }catch(e){} }
+  pendingQueue.push({type:'delRepay', id:id}); savePending();
+};
+
+function renderCashflow(mt){
+  const body = document.getElementById('cashflow-body');
+  if(!body) return;
+  // mt is already owner-filtered by caller
+  const cashSpend  = mt.filter(t=>(t.pay||'cash')!=='credit').reduce((s,t)=>s+t.amount,0);
+  const creditSpend= mt.filter(t=>(t.pay||'cash')==='credit').reduce((s,t)=>s+t.amount,0);
+  let repays = repayTxns.filter(r=>r.month===smk());
+  if(dashOwner!=='all') repays = repays.filter(r=>(r.owner||owners[0])===dashOwner);
+  const repayTot = repays.reduce((s,r)=>s+r.amount,0);
+  const totalOut = cashSpend + repayTot;
+
+  let html = `本月现金/转账消费 <span style="color:var(--text);float:right;">S$ ${cashSpend.toFixed(2)}</span><br>`;
+  html += `本月信用卡还款 <span style="color:var(--text);float:right;">S$ ${repayTot.toFixed(2)}</span><br>`;
+  html += `<span style="color:var(--gold);font-weight:600;">本月实际现金流出</span> <span style="color:var(--gold);font-weight:600;float:right;">S$ ${totalOut.toFixed(2)}</span><br>`;
+  if(creditSpend > 0){
+    html += `<span style="color:var(--text-faint);font-size:12px;">本月刷卡 S$ ${creditSpend.toFixed(2)}（待还，不计入本月流出）</span><br>`;
+  }
+  if(repays.length){
+    html += `<div style="margin-top:6px;border-top:1px solid var(--border);padding-top:6px;">`;
+    repays.forEach(r=>{
+      html += `<div style="font-size:12px;display:flex;justify-content:space-between;align-items:center;">
+        <span>💳 ${r.note||'还款'} · S$ ${r.amount.toFixed(2)}${r.owner?' · '+r.owner:''}</span>
+        <button class="del-btn" style="font-size:11px;" onclick="delRepay('${r.id}')">✕</button>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+  body.innerHTML = html;
+}
+
 function renderDash(){
   buildDashOwnerSwitch();
   const mt=mTxns(dashOwner);
+  renderCashflow(mt);
   const tot=mt.reduce((s,t)=>s+t.amount,0);
   const ownerLabel = dashOwner==='all' ? '' : dashOwner+'的';
   document.getElementById('total-lbl-el')?.remove();
@@ -1599,6 +1676,24 @@ function buildEntry(){
   document.getElementById('note-input').value='';
   const sb=document.getElementById('submit-btn');sb.disabled=true;sb.textContent='＋ 记入';
   buildOwnerSwitch('entry-owner-switch', curOwner, function(o){ setCurOwner(o); });
+  buildPaySwitch();
+}
+
+function buildPaySwitch(){
+  var el = document.getElementById('entry-pay-switch');
+  if(!el) return;
+  el.innerHTML = '';
+  [{id:'cash',label:'💵 现金/转账'},{id:'credit',label:'💳 信用卡'}].forEach(function(opt){
+    var btn = document.createElement('button');
+    btn.className = 'owner-btn' + (selPayType===opt.id?' active':'');
+    btn.textContent = opt.label;
+    btn.onclick = function(){
+      selPayType = opt.id;
+      localStorage.setItem('mz_payType', opt.id);
+      buildPaySwitch();
+    };
+    el.appendChild(btn);
+  });
 }
 
 function selCatFn(catId){
@@ -1644,7 +1739,7 @@ window.addTxn=async function(){
   const note=document.getElementById('note-input').value.trim();
   if(!selCat||!amt||amt<=0)return;
   const now_ts=new Date().toISOString();
-  const txn={id:gid(),month:smk(),catId:selCat,sub:selSub||'',amount:amt,note,date:now_ts,owner:curOwner};
+  const txn={id:gid(),month:smk(),catId:selCat,sub:selSub||'',amount:amt,note,date:now_ts,owner:curOwner,pay:selPayType};
 
   // Optimistic local update
   txns.unshift(txn);
@@ -1786,7 +1881,7 @@ window.renderHist=function(){
       <div class="txn-info">
         <div class="txn-cat">${cat?.emoji||''} ${cat?.label||t.catId}${t.sub?' · '+t.sub:''}</div>
         ${t.note?`<div class="txn-note">${t.note}</div>`:''}
-        <div class="txn-date">${ds}${t.owner && owners.length>1 ? " · "+t.owner : ""}</div>
+        <div class="txn-date">${ds}${t.owner && owners.length>1 ? " · "+t.owner : ""}${!isIncome && (t.pay||"cash")==="credit" ? " · 💳" : ""}</div>
         ${isPending?'<div class="txn-pending">⏳ 待同步</div>':''}
       </div>
       <div class="txn-right">
@@ -2582,7 +2677,7 @@ function renderIncomePage(){
       <div class="txn-info">
         <div class="txn-cat">${cat?.emoji||''} ${cat?.label||t.catId}</div>
         ${t.note?`<div class="txn-note">${t.note}</div>`:''}
-        <div class="txn-date">${ds}${t.owner && owners.length>1 ? " · "+t.owner : ""}</div>
+        <div class="txn-date">${ds}${t.owner && owners.length>1 ? " · "+t.owner : ""}${!isIncome && (t.pay||"cash")==="credit" ? " · 💳" : ""}</div>
       </div>
       <div class="txn-right">
         <div class="txn-amt" style="color:#6BA89A">+S$ ${t.amount.toFixed(2)}</div>
