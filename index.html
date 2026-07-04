@@ -1462,7 +1462,7 @@ window.showPage=function(name, direction){
   }, 270);
 
   currentPage = name;
-  document.querySelectorAll('.nav-btn').forEach((b,i)=>{
+  document.querySelectorAll('header nav .nav-btn').forEach((b,i)=>{
     b.classList.toggle('active', PAGE_ORDER[i]===name);
   });
   document.getElementById('month-bar-el').classList.toggle('hidden', name==='settings');
@@ -2847,7 +2847,8 @@ document.addEventListener('wheel', function(e){
     var dy=y-sy;
 
     if(!axis){
-      if(Math.abs(dx)<6 && Math.abs(dy)<6) return;
+      // 14px threshold: sloppy taps on buttons keep their click events
+      if(Math.abs(dx)<14 && Math.abs(dy)<14) return;
       axis = Math.abs(dx)>Math.abs(dy) ? 'h' : 'v';
       if(axis==='h'){
         lockedDir = dx<0 ? 'left' : 'right';
