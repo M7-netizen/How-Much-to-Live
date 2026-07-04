@@ -717,6 +717,13 @@
         </div>
       </div>
 
+      <!-- Credit cards -->
+      <div class="settings-header">
+        <div class="settings-title">信用卡管理</div>
+        <button class="add-cat-btn" onclick="addCard()">＋ 添加信用卡</button>
+      </div>
+      <div id="card-list" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;"></div>
+
       <div class="settings-header">
         <div class="settings-title">类别管理</div>
         <button class="add-cat-btn" onclick="openAddCatModal()">＋ 新增类别</button>
@@ -809,6 +816,10 @@
       <div class="modal-lbl">细分</div>
       <div class="edit-sub-grid" id="edit-sub-grid"></div>
     </div>
+    <div class="modal-field" id="edit-pay-field">
+      <div class="modal-lbl">支付方式</div>
+      <div class="edit-cat-grid" id="edit-pay-grid"></div>
+    </div>
     <div class="modal-field">
       <div class="modal-lbl">金额（SGD）</div>
       <div class="amount-row">
@@ -883,6 +894,8 @@ let txns = [];
 let incomeCats = [];
 let incomeTxns = [];
 let repayTxns = [];
+let cards = JSON.parse(localStorage.getItem('mz_cards') || '[]');
+let selCard = localStorage.getItem('mz_selCard') || '';
 let selPayType = localStorage.getItem('mz_payType') || 'cash';
 let historyFilter = null; // catId to filter by, null = all
 let historySubFilter = null; // sub to filter by
@@ -898,6 +911,10 @@ let dashOwner = localStorage.getItem('mz_dashOwner') || 'all'; // 'all', owners[
 function saveOwners(){
   localStorage.setItem('mz_owners', JSON.stringify(owners));
   if(isOnline){ try{ setDoc(doc(db,'settings','shared'), {owners:owners, tabOrder:getDashTabOrder()}, {merge:true}); }catch(e){} }
+}
+function saveCards(){
+  localStorage.setItem('mz_cards', JSON.stringify(cards));
+  if(isOnline){ try{ setDoc(doc(db,'settings','shared'), {cards:cards}, {merge:true}); }catch(e){} }
 }
 function setCurOwner(o){ curOwner=o; localStorage.setItem('mz_curOwner',o); updateOwnerUI(); }
 function setDashOwner(o){ dashOwner=o; localStorage.setItem('mz_dashOwner',o); renderDash(); }
@@ -1016,9 +1033,11 @@ function subscribeAll(){
   onSnapshot(doc(db,'settings','shared'), snap => {
     if(snap.exists()){
       const d = snap.data();
-      if(d.owners){ owners = d.owners; saveOwners(); }
+      if(d.owners){ owners = d.owners; localStorage.setItem('mz_owners', JSON.stringify(owners)); }
       if(d.tabOrder){ localStorage.setItem('mz_dashTabOrder', JSON.stringify(d.tabOrder)); }
+      if(d.cards){ cards = d.cards; localStorage.setItem('mz_cards', JSON.stringify(cards)); }
       updateOwnerUI(); buildDashOwnerSwitch(); renderDash();
+      buildPaySwitch(); renderCardSettings();
     }
   });
 
@@ -1267,6 +1286,42 @@ window.switchIncomeTxnOwner=async function(id){
   pendingQueue.push({type:'setIncomeTxn',data:t}); savePending();
 };
 
+window.addCard = function(){
+  const name = prompt('信用卡名称（如：DBS、UOB）');
+  if(name === null) return;
+  const trimmed = name.trim();
+  if(!trimmed) return;
+  if(cards.includes(trimmed)){ toast('该卡已存在'); return; }
+  cards.push(trimmed);
+  saveCards();
+  renderCardSettings();
+  buildPaySwitch();
+  toast(`已添加「${trimmed}」`);
+};
+
+window.delCard = function(name){
+  if(!confirm(`删除信用卡「${name}」？（已有记录不受影响）`)) return;
+  cards = cards.filter(c=>c!==name);
+  if(selCard===name){ selCard=''; localStorage.setItem('mz_selCard',''); }
+  saveCards();
+  renderCardSettings();
+  buildPaySwitch();
+  toast('已删除');
+};
+
+function renderCardSettings(){
+  const el = document.getElementById('card-list');
+  if(!el) return;
+  if(!cards.length){
+    el.innerHTML = '<span class="no-sub">暂无信用卡，添加后可分卡追踪现金流</span>';
+    return;
+  }
+  el.innerHTML = cards.map(c=>`
+    <div class="sub-tag">💳 ${c}
+      <button class="sub-tag-del" onclick="delCard('${c}')">×</button>
+    </div>`).join('');
+}
+
 window.updateOwnerName=function(idx, val){
   val = val.trim();
   if(!val) return;
@@ -1500,12 +1555,21 @@ function mTxns(ownerFilter){
 }
 
 window.addRepay = async function(){
-  const raw = prompt('本月信用卡还款金额 (S$)');
+  const raw = prompt('本月信用卡还款金额 (S$)，支持算式');
   if(raw === null) return;
   const amt = evalCalc(raw.trim());
   if(amt === null || amt <= 0){ toast('金额无效'); return; }
-  const note = prompt('备注（可选，如：DBS卡）') || '';
-  const rec = { id:gid(), month:smk(), amount:amt, note:note.trim(), date:new Date().toISOString(), owner:curOwner, type:'repay' };
+  let card = '';
+  if(cards.length === 1){
+    card = cards[0];
+  } else if(cards.length > 1){
+    const pick = prompt('哪张卡？输入序号：\n' + cards.map((c,i)=>`${i+1}. ${c}`).join('\n'), '1');
+    if(pick === null) return;
+    const i = parseInt(pick) - 1;
+    card = cards[i] || '';
+  }
+  const note = card ? '' : (prompt('备注（可选，如：DBS卡）') || '');
+  const rec = { id:gid(), month:smk(), amount:amt, note:note.trim(), card:card, date:new Date().toISOString(), owner:curOwner, type:'repay' };
   repayTxns.unshift(rec);
   renderDash();
   toast(`已记录还款 S$ ${amt.toFixed(2)}`);
@@ -1521,28 +1585,62 @@ window.delRepay = async function(id){
   pendingQueue.push({type:'delRepay', id:id}); savePending();
 };
 
+function prevMonthKey(){
+  let y=curY, m=curM-1;
+  if(m<1){m=12;y--;}
+  return mk(y,m);
+}
+
+function cardBreakdown(txnList){
+  // Group credit spending by card name
+  const byCard = {};
+  txnList.filter(t=>(t.pay||'cash')==='credit').forEach(t=>{
+    const c = t.card || '信用卡';
+    byCard[c] = (byCard[c]||0) + t.amount;
+  });
+  return byCard;
+}
+
 function renderCashflow(mt){
   const body = document.getElementById('cashflow-body');
   if(!body) return;
-  // mt is already owner-filtered by caller
-  const cashSpend  = mt.filter(t=>(t.pay||'cash')!=='credit').reduce((s,t)=>s+t.amount,0);
-  const creditSpend= mt.filter(t=>(t.pay||'cash')==='credit').reduce((s,t)=>s+t.amount,0);
+  const cashSpend = mt.filter(t=>(t.pay||'cash')!=='credit').reduce((s,t)=>s+t.amount,0);
+
   let repays = repayTxns.filter(r=>r.month===smk());
   if(dashOwner!=='all') repays = repays.filter(r=>(r.owner||owners[0])===dashOwner);
   const repayTot = repays.reduce((s,r)=>s+r.amount,0);
   const totalOut = cashSpend + repayTot;
 
+  // This month's credit spending per card
+  const thisCC = cardBreakdown(mt);
+  const thisCCTot = Object.values(thisCC).reduce((s,v)=>s+v,0);
+
+  // Last month's credit spending per card (estimate of this month's bills)
+  let lastTxns = txns.filter(t=>t.month===prevMonthKey());
+  if(dashOwner!=='all') lastTxns = lastTxns.filter(t=>(t.owner||owners[0])===dashOwner);
+  const lastCC = cardBreakdown(lastTxns);
+  const lastCCTot = Object.values(lastCC).reduce((s,v)=>s+v,0);
+
   let html = `本月现金/转账消费 <span style="color:var(--text);float:right;">S$ ${cashSpend.toFixed(2)}</span><br>`;
   html += `本月信用卡还款 <span style="color:var(--text);float:right;">S$ ${repayTot.toFixed(2)}</span><br>`;
   html += `<span style="color:var(--gold);font-weight:600;">本月实际现金流出</span> <span style="color:var(--gold);font-weight:600;float:right;">S$ ${totalOut.toFixed(2)}</span><br>`;
-  if(creditSpend > 0){
-    html += `<span style="color:var(--text-faint);font-size:12px;">本月刷卡 S$ ${creditSpend.toFixed(2)}（待还，不计入本月流出）</span><br>`;
+
+  if(lastCCTot > 0){
+    html += `<div style="margin-top:6px;border-top:1px solid var(--border);padding-top:6px;font-size:12px;color:var(--text-faint);">上月刷卡（预计本月应还）：`;
+    html += Object.entries(lastCC).map(([c,v])=>`${c} S$ ${v.toFixed(2)}`).join(' · ');
+    html += `</div>`;
+  }
+  if(thisCCTot > 0){
+    html += `<div style="font-size:12px;color:var(--text-faint);">本月刷卡（预计下月应还）：`;
+    html += Object.entries(thisCC).map(([c,v])=>`${c} S$ ${v.toFixed(2)}`).join(' · ');
+    html += `</div>`;
   }
   if(repays.length){
     html += `<div style="margin-top:6px;border-top:1px solid var(--border);padding-top:6px;">`;
     repays.forEach(r=>{
+      const cardLbl = r.card || r.note || '还款';
       html += `<div style="font-size:12px;display:flex;justify-content:space-between;align-items:center;">
-        <span>💳 ${r.note||'还款'} · S$ ${r.amount.toFixed(2)}${r.owner?' · '+r.owner:''}</span>
+        <span>💳 ${cardLbl} · S$ ${r.amount.toFixed(2)}${r.owner?' · '+r.owner:''}</span>
         <button class="del-btn" style="font-size:11px;" onclick="delRepay('${r.id}')">✕</button>
       </div>`;
     });
@@ -1683,17 +1781,28 @@ function buildPaySwitch(){
   var el = document.getElementById('entry-pay-switch');
   if(!el) return;
   el.innerHTML = '';
-  [{id:'cash',label:'💵 现金/转账'},{id:'credit',label:'💳 信用卡'}].forEach(function(opt){
+  var opts = [{pay:'cash',card:'',label:'💵 现金/转账'}];
+  if(cards.length){
+    cards.forEach(function(c){ opts.push({pay:'credit',card:c,label:'💳 '+c}); });
+  } else {
+    opts.push({pay:'credit',card:'',label:'💳 信用卡'});
+  }
+  opts.forEach(function(opt){
+    var isActive = selPayType===opt.pay && (opt.pay==='cash' || selCard===opt.card);
     var btn = document.createElement('button');
-    btn.className = 'owner-btn' + (selPayType===opt.id?' active':'');
+    btn.className = 'owner-btn' + (isActive?' active':'');
     btn.textContent = opt.label;
+    btn.style.flex = '1 1 auto';
     btn.onclick = function(){
-      selPayType = opt.id;
-      localStorage.setItem('mz_payType', opt.id);
+      selPayType = opt.pay;
+      selCard = opt.card;
+      localStorage.setItem('mz_payType', opt.pay);
+      localStorage.setItem('mz_selCard', opt.card);
       buildPaySwitch();
     };
     el.appendChild(btn);
   });
+  el.style.flexWrap = 'wrap';
 }
 
 function selCatFn(catId){
@@ -1739,7 +1848,7 @@ window.addTxn=async function(){
   const note=document.getElementById('note-input').value.trim();
   if(!selCat||!amt||amt<=0)return;
   const now_ts=new Date().toISOString();
-  const txn={id:gid(),month:smk(),catId:selCat,sub:selSub||'',amount:amt,note,date:now_ts,owner:curOwner,pay:selPayType};
+  const txn={id:gid(),month:smk(),catId:selCat,sub:selSub||'',amount:amt,note,date:now_ts,owner:curOwner,pay:selPayType,card:selPayType==='credit'?selCard:''};
 
   // Optimistic local update
   txns.unshift(txn);
@@ -1881,7 +1990,7 @@ window.renderHist=function(){
       <div class="txn-info">
         <div class="txn-cat">${cat?.emoji||''} ${cat?.label||t.catId}${t.sub?' · '+t.sub:''}</div>
         ${t.note?`<div class="txn-note">${t.note}</div>`:''}
-        <div class="txn-date">${ds}${t.owner && owners.length>1 ? " · "+t.owner : ""}${!isIncome && (t.pay||"cash")==="credit" ? " · 💳" : ""}</div>
+        <div class="txn-date">${ds}${t.owner && owners.length>1 ? " · "+t.owner : ""}${!isIncome && (t.pay||"cash")==="credit" ? " · 💳"+(t.card||"") : ""}</div>
         ${isPending?'<div class="txn-pending">⏳ 待同步</div>':''}
       </div>
       <div class="txn-right">
@@ -1913,6 +2022,7 @@ function renderSettings(keepOpenId){
   // Populate owner name inputs
   var o1=document.getElementById('owner1-input'); if(o1) o1.value=owners[0];
   var o2=document.getElementById('owner2-input'); if(o2) o2.value=owners[1];
+  renderCardSettings();
 
   const list=document.getElementById('settings-list');
   const openIds = keepOpenId ? [keepOpenId] : [...list.querySelectorAll('.settings-cat.open')].map(el=>el.dataset.id);
@@ -2677,7 +2787,7 @@ function renderIncomePage(){
       <div class="txn-info">
         <div class="txn-cat">${cat?.emoji||''} ${cat?.label||t.catId}</div>
         ${t.note?`<div class="txn-note">${t.note}</div>`:''}
-        <div class="txn-date">${ds}${t.owner && owners.length>1 ? " · "+t.owner : ""}${!isIncome && (t.pay||"cash")==="credit" ? " · 💳" : ""}</div>
+        <div class="txn-date">${ds}${t.owner && owners.length>1 ? " · "+t.owner : ""}${!isIncome && (t.pay||"cash")==="credit" ? " · 💳"+(t.card||"") : ""}</div>
       </div>
       <div class="txn-right">
         <div class="txn-amt" style="color:#6BA89A">+S$ ${t.amount.toFixed(2)}</div>
@@ -2759,6 +2869,7 @@ window.openEditTxn = function(id, isIncome) {
   } else {
     buildEditSubGrid(editSelCat, editSelSub);
   }
+  buildEditPayGrid(t);
   document.getElementById('edit-amt').value = t.amount;
   document.getElementById('edit-note').value = t.note || '';
   document.getElementById('edit-overlay').classList.add('open');
@@ -2782,6 +2893,38 @@ function buildEditSubGrid(catId, currentSub) {
     b.className = 'edit-sub-chip' + (s === sub ? ' selected' : '');
     b.textContent = s; b.dataset.sub = s;
     b.onclick = () => { editSelSub = s; grid.querySelectorAll('.edit-sub-chip').forEach(x => x.classList.toggle('selected', x.dataset.sub === s)); };
+    grid.appendChild(b);
+  });
+}
+
+let editSelPay='cash', editSelCard='';
+function buildEditPayGrid(t){
+  const field = document.getElementById('edit-pay-field');
+  const grid = document.getElementById('edit-pay-grid');
+  if(editIsIncome){ field.style.display='none'; return; }
+  field.style.display='block';
+  editSelPay = t.pay || 'cash';
+  editSelCard = t.card || '';
+  grid.innerHTML='';
+  var opts = [{pay:'cash',card:'',label:'💵 现金/转账'}];
+  if(cards.length){
+    cards.forEach(c=>opts.push({pay:'credit',card:c,label:'💳 '+c}));
+    // If txn has a card not in list (deleted card), still show it
+    if(editSelPay==='credit' && editSelCard && !cards.includes(editSelCard)){
+      opts.push({pay:'credit',card:editSelCard,label:'💳 '+editSelCard});
+    }
+  } else {
+    opts.push({pay:'credit',card:'',label:'💳 信用卡'});
+  }
+  opts.forEach(opt=>{
+    const b=document.createElement('button');
+    const isOn = editSelPay===opt.pay && (opt.pay==='cash' || editSelCard===opt.card);
+    b.className='edit-cat-chip'+(isOn?' selected':'');
+    b.textContent=opt.label;
+    b.onclick=()=>{
+      editSelPay=opt.pay; editSelCard=opt.card;
+      buildEditPayGrid({pay:editSelPay, card:editSelCard});
+    };
     grid.appendChild(b);
   });
 }
@@ -2811,7 +2954,7 @@ window.saveEdit = async function() {
 
   const idx = txns.findIndex(t => t.id === editTxnId);
   if (idx === -1) return;
-  txns[idx] = { ...txns[idx], month, catId: editSelCat, sub: editSelSub || '', amount: amt, note };
+  txns[idx] = { ...txns[idx], month, catId: editSelCat, sub: editSelSub || '', amount: amt, note, pay: editSelPay, card: editSelPay==='credit' ? editSelCard : '' };
   closeEdit();
   renderDash(); renderHist();
   toast('已更新');
