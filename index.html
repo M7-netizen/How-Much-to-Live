@@ -889,7 +889,7 @@ function saveOwners(){
 }
 function setCurOwner(o){ curOwner=o; localStorage.setItem('mz_curOwner',o); updateOwnerUI(); }
 function setDashOwner(o){ dashOwner=o; localStorage.setItem('mz_dashOwner',o); renderDash(); }
-let modalMode='add', modalEditId=null, modalColor=PALETTE[0];
+let modalMode='add', modalEditId=null, modalColor=PALETTE[0], modalTarget='expense';
 let isOnline = navigator.onLine;
 let unsubTxns = null;
 
@@ -1826,7 +1826,7 @@ function renderSettings(keepOpenId){
     const el=document.createElement('div');el.className='settings-cat';el.dataset.id=cat.id;
     el.innerHTML=`
       <div class="settings-cat-header" onclick="toggleSCat(this)">
-        <span class="drag-handle" onmousedown="makeDraggable(event,'${cat.id}')">⠿</span>
+        <span class="drag-handle" onmousedown="makeDraggable(event,'${cat.id}',false)" ontouchstart="makeDraggableTouch(event,'${cat.id}',false)">⠿</span>
         <span class="settings-cat-emoji">${cat.emoji}</span>
         <span class="settings-cat-name">${cat.label}${cat.myr?' <span style="font-size:10px;color:#6BA89A;background:rgba(107,168,154,0.15);border-radius:8px;padding:1px 6px;">MYR</span>':''}</span>
         <div class="settings-cat-actions">
@@ -1858,7 +1858,7 @@ function renderSettings(keepOpenId){
     const el=document.createElement('div');el.className='settings-cat';el.dataset.id=cat.id;
     el.innerHTML=`
       <div class="settings-cat-header" onclick="toggleSCat(this)">
-        <span class="drag-handle">⠿</span>
+        <span class="drag-handle" onmousedown="makeDraggable(event,'${cat.id}',true)" ontouchstart="makeDraggableTouch(event,'${cat.id}',true)">⠿</span>
         <span class="settings-cat-emoji">${cat.emoji}</span>
         <span class="settings-cat-name">${cat.label}</span>
         <div class="settings-cat-actions">
@@ -1942,33 +1942,74 @@ window.delCat=async function(catId){
 };
 
 // ── DRAG SORT ──
-window.makeDraggable=function(e,catId){
-  e.preventDefault();
-  const list=document.getElementById('settings-list');
-  function onMove(ev){
+// Unified drag for both expense and income category lists (mouse + touch)
+function startCatDrag(clientY0, catId, isIncome){
+  const listId = isIncome ? 'income-settings-list' : 'settings-list';
+  const list = document.getElementById(listId);
+  if(!list) return null;
+  const arr = isIncome ? incomeCats : cats;
+
+  function highlight(clientY){
     list.querySelectorAll('.settings-cat').forEach(item=>{
-      if(item.dataset.id===catId)return;
+      if(item.dataset.id===catId){ item.style.opacity='0.5'; return; }
       const rect=item.getBoundingClientRect();
-      item.classList.toggle('drag-over',Math.abs(ev.clientY-(rect.top+rect.height/2))<rect.height/2);
+      item.classList.toggle('drag-over',Math.abs(clientY-(rect.top+rect.height/2))<rect.height/2);
     });
   }
+
+  async function finish(){
+    const over=list.querySelector('.settings-cat.drag-over');
+    if(over&&over.dataset.id!==catId){
+      const fi=arr.findIndex(c=>c.id===catId);
+      const ti=arr.findIndex(c=>c.id===over.dataset.id);
+      const [moved]=arr.splice(fi,1);arr.splice(ti,0,moved);
+      arr.forEach((c,i)=>c.order=i);
+      renderSettings();
+      if(isIncome){
+        buildIncomeEntry();
+        for(const c of arr){ try{ await setDoc(doc(db,'incomeCats',c.id), c); }catch(e){} }
+      } else {
+        buildEntry();
+        await Promise.all(arr.map(c=>fsSetCat(c)));
+      }
+    }
+    list.querySelectorAll('.settings-cat').forEach(el=>{
+      el.classList.remove('drag-over'); el.style.opacity='';
+    });
+  }
+
+  return { highlight, finish };
+}
+
+window.makeDraggable=function(e,catId,isIncome){
+  e.preventDefault();
+  const drag = startCatDrag(e.clientY, catId, isIncome);
+  if(!drag) return;
+  function onMove(ev){ drag.highlight(ev.clientY); }
   async function onUp(){
     document.removeEventListener('mousemove',onMove);
     document.removeEventListener('mouseup',onUp);
-    const over=list.querySelector('.settings-cat.drag-over');
-    if(over&&over.dataset.id!==catId){
-      const fi=cats.findIndex(c=>c.id===catId);
-      const ti=cats.findIndex(c=>c.id===over.dataset.id);
-      const [moved]=cats.splice(fi,1);cats.splice(ti,0,moved);
-      cats.forEach((c,i)=>c.order=i);
-      renderSettings();
-      // sync all reordered cats
-      await Promise.all(cats.map(c=>fsSetCat(c)));
-    }
-    list.querySelectorAll('.settings-cat').forEach(e=>e.classList.remove('drag-over'));
+    await drag.finish();
   }
   document.addEventListener('mousemove',onMove);
   document.addEventListener('mouseup',onUp);
+};
+
+window.makeDraggableTouch=function(e,catId,isIncome){
+  // Called from touchstart on drag handle
+  const drag = startCatDrag(e.touches[0].clientY, catId, isIncome);
+  if(!drag) return;
+  function onMove(ev){
+    ev.preventDefault(); // stop page scroll while dragging
+    drag.highlight(ev.touches[0].clientY);
+  }
+  async function onEnd(){
+    document.removeEventListener('touchmove',onMove);
+    document.removeEventListener('touchend',onEnd);
+    await drag.finish();
+  }
+  document.addEventListener('touchmove',onMove,{passive:false});
+  document.addEventListener('touchend',onEnd,{passive:true});
 };
 
 
@@ -2035,6 +2076,7 @@ window.delIncomeCat = async function(catId){
 let incomeCatModalMode = 'add', incomeCatModalEditId = null;
 
 window.openAddIncomeCatModal = function(){
+  modalTarget='income';modalMode='add';modalEditId=null;
   incomeCatModalMode = 'add'; incomeCatModalEditId = null;
   document.getElementById('modal-title').textContent = '新增收入类别';
   document.getElementById('modal-emoji').value = '';
@@ -2051,6 +2093,7 @@ window.openAddIncomeCatModal = function(){
 
 window.openEditIncomeCat = function(catId){
   const cat = incomeCats.find(c=>c.id===catId); if(!cat) return;
+  modalTarget='income';modalMode='edit';modalEditId=catId;
   incomeCatModalMode = 'edit'; incomeCatModalEditId = catId;
   document.getElementById('modal-title').textContent = '编辑收入类别';
   document.getElementById('modal-emoji').value = cat.emoji;
@@ -2083,7 +2126,7 @@ function buildColorGrid(sel){
   modalColor=sel;
 }
 window.openAddCatModal=function(){
-  modalMode='add';modalEditId=null;
+  modalTarget='expense';modalMode='add';modalEditId=null;
   document.getElementById('modal-title').textContent='新增类别';
   document.getElementById('modal-emoji').value='';
   document.getElementById('modal-name').value='';
@@ -2097,7 +2140,7 @@ window.openAddCatModal=function(){
 };
 window.openEdit=function(catId){
   const cat=gc(catId);if(!cat)return;
-  modalMode='edit';modalEditId=catId;
+  modalTarget='expense';modalMode='edit';modalEditId=catId;
   document.getElementById('modal-title').textContent='编辑类别';
   document.getElementById('modal-emoji').value=cat.emoji;
   document.getElementById('modal-name').value=cat.label;
@@ -2116,6 +2159,24 @@ window.confirmModal=async function(){
   const name=document.getElementById('modal-name').value.trim();
   const myr=document.getElementById('modal-myr').checked;
   if(!name){toast('请输入名称');return;}
+
+  if(modalTarget==='income'){
+    // Income category
+    if(modalMode==='add'){
+      const newCat={id:gid(),label:name,emoji,color:modalColor,sub:[],order:incomeCats.length};
+      incomeCats.push(newCat);
+      closeModal();renderSettings();buildIncomeEntry();toast(`已添加「${name}」`);
+      try{ await setDoc(doc(db,'incomeCats',newCat.id), newCat); }catch(e){ pendingQueue.push({type:'setIncomeCat',data:newCat}); savePending(); }
+    } else {
+      const cat=incomeCats.find(c=>c.id===modalEditId);
+      if(cat){cat.label=name;cat.emoji=emoji;cat.color=modalColor;}
+      closeModal();renderSettings();buildIncomeEntry();toast(`已更新「${name}」`);
+      try{ await setDoc(doc(db,'incomeCats',cat.id), cat); }catch(e){}
+    }
+    return;
+  }
+
+  // Expense category
   if(modalMode==='add'){
     const newCat={id:gid(),label:name,emoji,color:modalColor,sub:[],order:cats.length,myr:myr};
     cats.push(newCat);
