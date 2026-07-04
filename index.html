@@ -1776,7 +1776,7 @@ window.renderHist=function(){
     const row=document.createElement('div');row.className='txn-row';row.style.animationDelay=(i*.03)+'s';
     const amtColor = isIncome ? 'color:#6BA89A;' : '';
     const amtPrefix = isIncome ? '+' : '';
-    const editBtn = isIncome ? '' : `<button class="del-btn" style="color:var(--text-dim);border:1px solid var(--border);border-radius:6px;padding:2px 8px;font-size:11px;" onclick="openEditTxn('${t.id}')">编辑</button>`;
+    const editBtn = `<button class="del-btn" style="color:var(--text-dim);border:1px solid var(--border);border-radius:6px;padding:2px 8px;font-size:11px;" onclick="openEditTxn('${t.id}',${isIncome})">编辑</button>`;
     const delFn = isIncome ? `delIncomeTxn('${t.id}')` : `delTxnFn('${t.id}')`;
     const ownerName = t.owner || owners[0];
     const otherOwner = ownerName === owners[0] ? owners[1] : owners[0];
@@ -2607,8 +2607,10 @@ window.delIncomeTxn = async function(id){
 let editTxnId = null, editSelCat = null, editSelSub = null;
 let pendingMyrFee = null; // stores MYR fee info for auto fee txn creation
 
-window.openEditTxn = function(id) {
-  const t = txns.find(x => x.id === id);
+let editIsIncome = false;
+window.openEditTxn = function(id, isIncome) {
+  editIsIncome = !!isIncome;
+  const t = editIsIncome ? incomeTxns.find(x => x.id === id) : txns.find(x => x.id === id);
   if (!t) return;
   editTxnId = id;
   editSelCat = t.catId;
@@ -2634,10 +2636,11 @@ window.openEditTxn = function(id) {
     monthSel.appendChild(o);
   });
 
-  // Category chips
+  // Category chips (income or expense list)
   const grid = document.getElementById('edit-cat-grid');
   grid.innerHTML = '';
-  cats.forEach(c => {
+  const catList = editIsIncome ? incomeCats : cats;
+  catList.forEach(c => {
     const b = document.createElement('button');
     b.className = 'edit-cat-chip' + (c.id === editSelCat ? ' selected' : '');
     b.dataset.id = c.id;
@@ -2651,12 +2654,16 @@ window.openEditTxn = function(id) {
         x.style.background = on ? c.color : '';
         x.style.borderColor = on ? c.color : '';
       });
-      buildEditSubGrid(c.id);
+      if(!editIsIncome) buildEditSubGrid(c.id);
     };
     grid.appendChild(b);
   });
 
-  buildEditSubGrid(editSelCat, editSelSub);
+  if(editIsIncome){
+    document.getElementById('edit-sub-field').style.display='none';
+  } else {
+    buildEditSubGrid(editSelCat, editSelSub);
+  }
   document.getElementById('edit-amt').value = t.amount;
   document.getElementById('edit-note').value = t.note || '';
   document.getElementById('edit-overlay').classList.add('open');
@@ -2694,6 +2701,18 @@ window.saveEdit = async function() {
   const m = parseInt(document.getElementById('edit-month-sel').value);
   const month = mk(y, m);
   const note = document.getElementById('edit-note').value.trim();
+
+  if(editIsIncome){
+    const idx = incomeTxns.findIndex(t => t.id === editTxnId);
+    if (idx === -1) return;
+    incomeTxns[idx] = { ...incomeTxns[idx], month, catId: editSelCat, amount: amt, note };
+    closeEdit();
+    renderDash(); renderHist();
+    toast('已更新');
+    try{ await setDoc(doc(db,'incomeTxns',editTxnId), incomeTxns[idx]); }
+    catch(e){ pendingQueue.push({type:'setIncomeTxn',data:incomeTxns[idx]}); savePending(); }
+    return;
+  }
 
   const idx = txns.findIndex(t => t.id === editTxnId);
   if (idx === -1) return;
