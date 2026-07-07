@@ -2799,7 +2799,7 @@ function renderIncomePage(){
       <div class="txn-info">
         <div class="txn-cat">${cat?.emoji||''} ${cat?.label||t.catId}</div>
         ${t.note?`<div class="txn-note">${t.note}</div>`:''}
-        <div class="txn-date">${ds}${t.owner && owners.length>1 ? " · "+t.owner : ""}${!isIncome && (t.pay||"cash")==="credit" ? " · 💳"+(t.card||"") : ""}</div>
+        <div class="txn-date">${ds}${t.owner && owners.length>1 ? " · "+t.owner : ""}</div>
       </div>
       <div class="txn-right">
         <div class="txn-amt" style="color:#6BA89A">+S$ ${t.amount.toFixed(2)}</div>
