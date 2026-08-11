@@ -735,6 +735,18 @@
         <button class="add-cat-btn" style="background:#6BA89A;" onclick="openAddIncomeCatModal()">＋ 新增类别</button>
       </div>
       <div class="settings-list" id="income-settings-list"></div>
+
+      <!-- Data export -->
+      <div class="settings-header" style="margin-top:28px;">
+        <div class="settings-title">数据导出</div>
+      </div>
+      <div style="margin-bottom:8px;">
+        <div class="field-lbl" style="margin-bottom:6px;">导出当前所选月份的所有支出与收入为 CSV，可发给他人核对</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="add-cat-btn" onclick="exportCSV('month')">导出本月 CSV</button>
+          <button class="add-cat-btn" style="background:var(--text-dim);" onclick="exportCSV('all')">导出全部 CSV</button>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -2974,6 +2986,85 @@ window.saveEdit = async function() {
 };
 
 // ── TOAST ──
+window.exportCSV = function(scope){
+  // scope: 'month' = current selected month only, 'all' = everything
+  const wantMonth = smk();
+  function inScope(t){ return scope==='all' ? true : t.month===wantMonth; }
+
+  const rows = [];
+  // Header row
+  rows.push(['类型','月份','日期','类别','细分','金额','备注','记账人','支付方式','信用卡']);
+
+  // Expenses
+  txns.filter(inScope).forEach(t=>{
+    const cat = gc(t.catId);
+    const payLabel = (t.pay==='credit') ? '信用卡' : '现金/转账';
+    rows.push([
+      '支出',
+      t.month,
+      (t.date||'').slice(0,10),
+      cat ? cat.label : t.catId,
+      t.sub||'',
+      t.amount.toFixed(2),
+      (t.note||'').replace(/[\r\n]+/g,' '),
+      t.owner||owners[0],
+      payLabel,
+      t.card||''
+    ]);
+  });
+
+  // Income
+  incomeTxns.filter(inScope).forEach(t=>{
+    const cat = incomeCats.find(c=>c.id===t.catId);
+    rows.push([
+      '收入',
+      t.month,
+      (t.date||'').slice(0,10),
+      cat ? cat.label : t.catId,
+      '',
+      t.amount.toFixed(2),
+      (t.note||'').replace(/[\r\n]+/g,' '),
+      t.owner||owners[0],
+      '',
+      ''
+    ]);
+  });
+
+  // Repayments
+  repayTxns.filter(inScope).forEach(r=>{
+    rows.push([
+      '还款',
+      r.month,
+      (r.date||'').slice(0,10),
+      '信用卡还款',
+      '',
+      r.amount.toFixed(2),
+      (r.note||'').replace(/[\r\n]+/g,' '),
+      r.owner||owners[0],
+      '',
+      r.card||''
+    ]);
+  });
+
+  if(rows.length<=1){ toast('本月暂无数据可导出'); return; }
+
+  // Build CSV text (quote every field, escape quotes)
+  const csv = rows.map(row =>
+    row.map(cell => '"' + String(cell).replace(/"/g,'""') + '"').join(',')
+  ).join('\n');
+
+  // BOM for Excel to read UTF-8 Chinese correctly
+  const blob = new Blob(['\ufeff'+csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const fname = scope==='all' ? '月帐_全部.csv' : ('月帐_'+wantMonth+'.csv');
+  a.href = url; a.download = fname;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+  toast('已导出 '+(rows.length-1)+' 笔记录');
+};
+
 function toast(msg){
   const el=document.getElementById('toast');el.textContent=msg;el.classList.add('show');
   setTimeout(()=>el.classList.remove('show'),2200);
