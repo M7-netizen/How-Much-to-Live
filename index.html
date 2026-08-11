@@ -741,10 +741,14 @@
         <div class="settings-title">数据导出</div>
       </div>
       <div style="margin-bottom:8px;">
-        <div class="field-lbl" style="margin-bottom:6px;">导出当前所选月份的所有支出与收入为 CSV，可发给他人核对</div>
+        <div class="field-lbl" style="margin-bottom:6px;">导出所有支出与收入为 CSV，可发给他人核对</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
+          <select id="export-month-sel" style="flex:1;min-width:140px;padding:8px 12px;border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,0.04);color:var(--text);font-size:14px;"></select>
+          <button class="add-cat-btn" onclick="exportCSV('pick')">导出所选月份</button>
+        </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <button class="add-cat-btn" onclick="exportCSV('month')">导出本月 CSV</button>
-          <button class="add-cat-btn" style="background:var(--text-dim);" onclick="exportCSV('all')">导出全部 CSV</button>
+          <button class="add-cat-btn" onclick="exportCSV('month')">导出当前月份</button>
+          <button class="add-cat-btn" style="background:var(--text-dim);" onclick="exportCSV('all')">导出全部</button>
         </div>
       </div>
     </div>
@@ -2047,6 +2051,7 @@ function renderSettings(keepOpenId){
   var o1=document.getElementById('owner1-input'); if(o1) o1.value=owners[0];
   var o2=document.getElementById('owner2-input'); if(o2) o2.value=owners[1];
   renderCardSettings();
+  populateExportMonths();
 
   const list=document.getElementById('settings-list');
   const openIds = keepOpenId ? [keepOpenId] : [...list.querySelectorAll('.settings-cat.open')].map(el=>el.dataset.id);
@@ -2986,9 +2991,33 @@ window.saveEdit = async function() {
 };
 
 // ── TOAST ──
+function populateExportMonths(){
+  const sel = document.getElementById('export-month-sel');
+  if(!sel) return;
+  // Collect all months that have any data
+  const monthsSet = new Set();
+  txns.forEach(t=>monthsSet.add(t.month));
+  incomeTxns.forEach(t=>monthsSet.add(t.month));
+  repayTxns.forEach(r=>monthsSet.add(r.month));
+  monthsSet.add(smk()); // always include current
+  // Sort descending (newest first)
+  const months = [...monthsSet].sort().reverse();
+  const cur = sel.value;
+  sel.innerHTML = months.map(m=>{
+    const [y,mo] = m.split('-');
+    const label = y+' 年 '+parseInt(mo)+' 月';
+    return `<option value="${m}">${label}</option>`;
+  }).join('');
+  if(cur && months.includes(cur)) sel.value = cur;
+}
+
 window.exportCSV = function(scope){
-  // scope: 'month' = current selected month only, 'all' = everything
-  const wantMonth = smk();
+  // scope: 'month' = current selected month, 'pick' = dropdown month, 'all' = everything
+  let wantMonth = smk();
+  if(scope==='pick'){
+    const sel = document.getElementById('export-month-sel');
+    if(sel && sel.value) wantMonth = sel.value;
+  }
   function inScope(t){ return scope==='all' ? true : t.month===wantMonth; }
 
   const rows = [];
