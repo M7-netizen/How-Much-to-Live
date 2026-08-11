@@ -775,9 +775,13 @@
           <button class="add-cat-btn" onclick="exportCSV('month')">下载当前月</button>
           <button class="add-cat-btn" style="background:var(--text-dim);" onclick="exportCSV('all')">下载全部</button>
         </div>
-        <div class="field-lbl" style="margin:14px 0 6px;">导出当前类别结构（包含用户新增的类别与细分）</div>
-        <button class="add-cat-btn" style="background:#9A7BBE;" onclick="exportCategoryCSV()">下载类别与细分</button>
         <textarea id="export-preview" readonly placeholder="点「复制」后，CSV 内容会显示在这里，并已复制到剪贴板" style="width:100%;box-sizing:border-box;height:120px;margin-top:10px;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,0.04);color:var(--text);font-size:11px;font-family:monospace;resize:vertical;"></textarea>
+
+        <div class="field-lbl" style="margin:14px 0 6px;">类别结构（含自定义类别与细分）</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="add-cat-btn" style="background:#6BA89A;" onclick="copyCategoryCSV()">复制类别与细分</button>
+          <button class="add-cat-btn" onclick="exportCategoryCSV()">下载类别与细分</button>
+        </div>
       </div>
 
       <!-- Data import -->
@@ -3398,7 +3402,7 @@ window.exportCSV = function(scope){
 
 // Export the live category structure received from Firestore (or the offline cache).
 // The last two columns make categories/subcategories added after the built-in defaults easy to identify.
-window.exportCategoryCSV = function(){
+function buildCategoryCSV(){
   const defaultExpense = new Map(DEFAULT_CATS.map(c => [c.id, c]));
   const defaultIncome = new Map(DEFAULT_INCOME_CATS.map(c => [c.id, c]));
   const rows = [['类型','类别ID','类别','细分','用户新增类别','用户新增细分']];
@@ -3428,6 +3432,26 @@ window.exportCategoryCSV = function(){
   const csv = rows.map(row =>
     row.map(cell => '"' + String(cell).replace(/"/g,'""') + '"').join(',')
   ).join('\n');
+  return { csv, count: rows.length-1 };
+}
+
+window.copyCategoryCSV = async function(){
+  const { csv, count } = buildCategoryCSV();
+  const preview = document.getElementById('export-preview');
+  if(preview) preview.value = csv;
+  let copied = false;
+  try{
+    await navigator.clipboard.writeText(csv);
+    copied = true;
+  }catch(e){
+    if(preview){ preview.focus(); preview.select(); try{ document.execCommand('copy'); copied = true; }catch(e2){} }
+  }
+  if(copied) toast('已复制 '+count+' 行类别与细分');
+  else toast('已显示 '+count+' 行，请手动全选复制');
+};
+
+window.exportCategoryCSV = function(){
+  const { csv, count } = buildCategoryCSV();
   const blob = new Blob(['\ufeff'+csv], {type:'text/csv;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -3436,7 +3460,7 @@ window.exportCategoryCSV = function(){
   document.body.appendChild(a); a.click();
   document.body.removeChild(a);
   setTimeout(()=>URL.revokeObjectURL(url), 1000);
-  toast('已导出 '+(rows.length-1)+' 行类别与细分');
+  toast('已导出 '+count+' 行类别与细分');
 };
 
 function toast(msg){
