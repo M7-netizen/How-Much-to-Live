@@ -751,6 +751,20 @@
           <button class="add-cat-btn" style="background:var(--text-dim);" onclick="exportCSV('all')">导出全部</button>
         </div>
       </div>
+
+      <!-- Data import -->
+      <div class="settings-header" style="margin-top:28px;">
+        <div class="settings-title">数据导入</div>
+      </div>
+      <div style="margin-bottom:8px;">
+        <div class="field-lbl" style="margin-bottom:6px;">粘贴 CSV 内容（与导出格式相同），预览后批量导入</div>
+        <textarea id="import-textarea" placeholder='"类型","月份","日期","类别","细分","金额","备注","记账人","支付方式","信用卡"&#10;"支出","2026-07","2026-07-02",...' style="width:100%;box-sizing:border-box;height:100px;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,0.04);color:var(--text);font-size:12px;font-family:monospace;resize:vertical;"></textarea>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+          <button class="add-cat-btn" onclick="previewImport()">预览</button>
+          <button class="add-cat-btn" id="import-confirm-btn" style="background:#6BA89A;display:none;" onclick="confirmImport()">确认导入</button>
+        </div>
+        <div id="import-preview" style="margin-top:10px;font-size:12px;color:var(--text-dim);"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -3010,6 +3024,137 @@ function populateExportMonths(){
   }).join('');
   if(cur && months.includes(cur)) sel.value = cur;
 }
+
+// ── CSV IMPORT ──
+let importParsed = null; // holds parsed rows awaiting confirmation
+
+function parseCSVLine(line){
+  // Parse a single CSV line respecting quoted fields
+  const out = [];
+  let cur = '', inQ = false;
+  for(let i=0;i<line.length;i++){
+    const ch = line[i];
+    if(inQ){
+      if(ch==='"'){
+        if(line[i+1]==='"'){ cur+='"'; i++; }
+        else inQ=false;
+      } else cur+=ch;
+    } else {
+      if(ch==='"') inQ=true;
+      else if(ch===',') { out.push(cur); cur=''; }
+      else cur+=ch;
+    }
+  }
+  out.push(cur);
+  return out;
+}
+
+function findCatByLabel(label, isIncome){
+  const list = isIncome ? incomeCats : cats;
+  return list.find(c => c.label === label);
+}
+
+window.previewImport = function(){
+  const raw = document.getElementById('import-textarea').value.trim();
+  const box = document.getElementById('import-preview');
+  if(!raw){ box.textContent = '请先粘贴 CSV 内容'; return; }
+
+  const lines = raw.split(/\r?\n/).filter(l=>l.trim());
+  if(lines.length < 2){ box.textContent = '内容太少，至少要有表头和一行数据'; return; }
+
+  // Detect header row and skip it
+  let startIdx = 0;
+  if(lines[0].includes('类型') && lines[0].includes('金额')) startIdx = 1;
+
+  const parsed = [];
+  const warnings = [];
+  for(let i=startIdx;i<lines.length;i++){
+    const f = parseCSVLine(lines[i]);
+    // Expected: 类型,月份,日期,类别,细分,金额,备注,记账人,支付方式,信用卡
+    const [type, month, date, catLabel, sub, amountStr, note, owner, pay, card] = f;
+    if(!type || !month || !amountStr) { warnings.push(`第${i+1}行：缺少必要字段，已跳过`); continue; }
+    const amount = parseFloat(amountStr);
+    if(isNaN(amount)){ warnings.push(`第${i+1}行：金额无效「${amountStr}」，已跳过`); continue; }
+
+    const isIncome = type === '收入';
+    const isRepay = type === '还款';
+
+    let catId = '';
+    if(!isRepay){
+      const cat = findCatByLabel(catLabel, isIncome);
+      if(!cat){ warnings.push(`第${i+1}行：找不到类别「${catLabel}」，已跳过`); continue; }
+      catId = cat.id;
+    }
+
+    parsed.push({
+      type, month, date: date || new Date().toISOString().slice(0,10),
+      catId, catLabel, sub: sub||'', amount, note: note||'',
+      owner: owner||owners[0], pay: pay||'', card: card||'', isIncome, isRepay
+    });
+  }
+
+  importParsed = parsed;
+
+  // Summary
+  const exp = parsed.filter(p=>p.type==='支出');
+  const inc = parsed.filter(p=>p.isIncome);
+  const rep = parsed.filter(p=>p.isRepay);
+  const expTot = exp.reduce((s,p)=>s+p.amount,0);
+  const incTot = inc.reduce((s,p)=>s+p.amount,0);
+  const repTot = rep.reduce((s,p)=>s+p.amount,0);
+
+  let html = `<div style="color:var(--text);font-weight:600;margin-bottom:6px;">解析成功 ${parsed.length} 笔：</div>`;
+  html += `支出 ${exp.length} 笔 · S$ ${expTot.toFixed(2)}<br>`;
+  html += `收入 ${inc.length} 笔 · S$ ${incTot.toFixed(2)}<br>`;
+  html += `还款 ${rep.length} 笔 · S$ ${repTot.toFixed(2)}<br>`;
+  if(warnings.length){
+    html += `<div style="color:#c97a7a;margin-top:8px;">⚠️ ${warnings.length} 条警告：<br>${warnings.join('<br>')}</div>`;
+  }
+  html += `<div style="margin-top:8px;color:var(--text-faint);">确认无误后点「确认导入」。导入的记录会同步到云端。</div>`;
+  box.innerHTML = html;
+
+  document.getElementById('import-confirm-btn').style.display = parsed.length ? 'inline-block' : 'none';
+};
+
+window.confirmImport = async function(){
+  if(!importParsed || !importParsed.length){ toast('没有可导入的数据'); return; }
+  const box = document.getElementById('import-preview');
+  let done = 0;
+
+  for(const p of importParsed){
+    const id = gid();
+    if(p.isRepay){
+      const rec = { id, month:p.month, amount:p.amount, note:p.note, card:p.card,
+        date:new Date(p.date).toISOString(), owner:p.owner, type:'repay' };
+      repayTxns.unshift(rec);
+      try{ await setDoc(doc(db,'repayTxns',id), rec); }catch(e){}
+    } else if(p.isIncome){
+      const txn = { id, month:p.month, catId:p.catId, amount:p.amount, note:p.note,
+        date:new Date(p.date).toISOString(), type:'income', owner:p.owner };
+      incomeTxns.unshift(txn);
+      try{ await setDoc(doc(db,'incomeTxns',id), txn); }catch(e){}
+    } else {
+      const pay = (p.pay==='信用卡') ? 'credit' : 'cash';
+      const txn = { id, month:p.month, catId:p.catId, sub:p.sub, amount:p.amount, note:p.note,
+        date:new Date(p.date).toISOString(), owner:p.owner, pay, card: pay==='credit'?p.card:'' };
+      txns.unshift(txn);
+      try{ await setDoc(doc(db,'txns',id), txn); }catch(e){}
+    }
+    done++;
+  }
+
+  // Refresh caches + UI
+  localStorage.setItem('mz_txns_cache', JSON.stringify(txns));
+  localStorage.setItem('mz_itxns_cache', JSON.stringify(incomeTxns));
+  localStorage.setItem('mz_repay_cache', JSON.stringify(repayTxns));
+
+  importParsed = null;
+  document.getElementById('import-textarea').value = '';
+  document.getElementById('import-confirm-btn').style.display = 'none';
+  box.innerHTML = `<div style="color:#6BA89A;font-weight:600;">✓ 已导入 ${done} 笔记录</div>`;
+  renderDash(); renderHist();
+  toast(`已导入 ${done} 笔`);
+};
 
 window.exportCSV = function(scope){
   // scope: 'month' = current selected month, 'pick' = dropdown month, 'all' = everything
