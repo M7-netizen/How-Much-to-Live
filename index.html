@@ -776,8 +776,13 @@
         <div class="settings-title">数据导入</div>
       </div>
       <div style="margin-bottom:8px;">
-        <div class="field-lbl" style="margin-bottom:6px;">粘贴 CSV 内容（与导出格式相同），预览后批量导入</div>
-        <textarea id="import-textarea" placeholder='"类型","月份","日期","类别","细分","金额","备注","记账人","支付方式","信用卡"&#10;"支出","2026-07","2026-07-02",...' style="width:100%;box-sizing:border-box;height:100px;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,0.04);color:var(--text);font-size:12px;font-family:monospace;resize:vertical;"></textarea>
+        <div class="field-lbl" style="margin-bottom:6px;">拖入 CSV 文件，或点击选择；也可直接粘贴内容</div>
+        <div id="import-dropzone" onclick="document.getElementById('import-file').click()"
+          style="border:2px dashed var(--border);border-radius:12px;padding:20px 12px;text-align:center;cursor:pointer;color:var(--text-dim);font-size:13px;margin-bottom:8px;transition:all .15s;">
+          📄 拖入 CSV 文件到这里，或点击选择文件
+        </div>
+        <input type="file" id="import-file" accept=".csv,text/csv" style="display:none;" onchange="handleImportFile(event)">
+        <textarea id="import-textarea" placeholder='或粘贴 CSV 内容…' style="width:100%;box-sizing:border-box;height:80px;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,0.04);color:var(--text);font-size:12px;font-family:monospace;resize:vertical;"></textarea>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
           <button class="add-cat-btn" onclick="previewImport()">预览</button>
           <button class="add-cat-btn" id="import-confirm-btn" style="background:#6BA89A;display:none;" onclick="confirmImport()">确认导入</button>
@@ -2165,6 +2170,7 @@ function renderSettings(keepOpenId){
   var o2=document.getElementById('owner2-input'); if(o2) o2.value=owners[1];
   renderCardSettings();
   populateExportMonths();
+  setupImportDropzone();
 
   const list=document.getElementById('settings-list');
   const openIds = keepOpenId ? [keepOpenId] : [...list.querySelectorAll('.settings-cat.open')].map(el=>el.dataset.id);
@@ -3151,6 +3157,56 @@ function parseCSVLine(line){
 function findCatByLabel(label, isIncome){
   const list = isIncome ? incomeCats : cats;
   return list.find(c => c.label === label);
+}
+
+// Read a File object and load its text into the textarea, then preview
+function loadImportFile(file){
+  if(!file){ return; }
+  if(!file.name.toLowerCase().endsWith('.csv') && file.type!=='text/csv'){
+    toast('请选择 CSV 文件'); return;
+  }
+  const reader = new FileReader();
+  reader.onload = function(e){
+    let text = e.target.result;
+    // Strip UTF-8 BOM if present
+    if(text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+    document.getElementById('import-textarea').value = text;
+    previewImport();
+  };
+  reader.onerror = function(){ toast('读取文件失败'); };
+  reader.readAsText(file, 'UTF-8');
+}
+
+window.handleImportFile = function(ev){
+  const file = ev.target.files && ev.target.files[0];
+  loadImportFile(file);
+  ev.target.value = ''; // reset so same file can be re-selected
+};
+
+// Set up drag & drop on the dropzone (called once from init or lazily)
+function setupImportDropzone(){
+  const dz = document.getElementById('import-dropzone');
+  if(!dz || dz._wired) return;
+  dz._wired = true;
+
+  ['dragenter','dragover'].forEach(evt=>{
+    dz.addEventListener(evt, e=>{
+      e.preventDefault(); e.stopPropagation();
+      dz.style.borderColor = 'var(--gold)';
+      dz.style.background = 'rgba(201,169,110,0.08)';
+    });
+  });
+  ['dragleave','drop'].forEach(evt=>{
+    dz.addEventListener(evt, e=>{
+      e.preventDefault(); e.stopPropagation();
+      dz.style.borderColor = 'var(--border)';
+      dz.style.background = '';
+    });
+  });
+  dz.addEventListener('drop', e=>{
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    loadImportFile(file);
+  });
 }
 
 window.previewImport = function(){
